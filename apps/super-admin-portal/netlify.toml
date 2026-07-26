@@ -1,5 +1,6 @@
-# Netlify site: Super Admin (e.g. admin.avichian.netlify.app or admin.avichian.in)
-# Connect this site with Base directory = apps/super-admin-portal
+# Super Admin — monorepo Netlify site
+# Base directory: apps/super-admin-portal
+# Or standalone: https://github.com/jathu1972-hub/avichian-super-admin
 
 [build]
   command = "cd ../.. && npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/super-admin-portal"
@@ -14,8 +15,14 @@
   status = 200
 
 [[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
   for = "/*"
   [headers.values]
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"

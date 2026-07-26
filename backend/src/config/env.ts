@@ -12,6 +12,16 @@ function requireEnv(key: string, fallback?: string): string {
   return value;
 }
 
+/** Prefer primary key; accept common aliases used in host dashboards / docs. */
+function requireEnvAlias(keys: string[], fallback?: string): string {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (value && value.trim()) return value.trim();
+  }
+  if (fallback !== undefined) return fallback;
+  throw new Error(`Missing required environment variable (any of): ${keys.join(', ')}`);
+}
+
 const appEnv = (process.env.APP_ENV ?? process.env.NODE_ENV ?? 'development').toLowerCase();
 const isProduction =
   appEnv === 'production' || process.env.NODE_ENV === 'production';
@@ -24,6 +34,16 @@ const lockoutEnabled =
     ? lockoutEnabledEnv === 'true' || lockoutEnabledEnv === '1'
     : isProduction;
 
+const frontendUrls = (
+  process.env.FRONTEND_URLS ??
+  process.env.CORS_ORIGIN ??
+  process.env.FRONTEND_URL ??
+  'http://localhost:5173,http://localhost:5174'
+)
+  .split(',')
+  .map((url) => url.trim())
+  .filter(Boolean);
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   appEnv,
@@ -33,17 +53,13 @@ export const env = {
   /** When false (default in development), failed logins never lock accounts. */
   lockoutEnabled,
   databaseUrl: requireEnv('DATABASE_URL'),
-  jwtAccessSecret: requireEnv('JWT_ACCESS_SECRET'),
-  jwtRefreshSecret: requireEnv('JWT_REFRESH_SECRET'),
+  /** JWT access — also accepts JWT_SECRET */
+  jwtAccessSecret: requireEnvAlias(['JWT_ACCESS_SECRET', 'JWT_SECRET']),
+  /** JWT refresh — also accepts REFRESH_SECRET */
+  jwtRefreshSecret: requireEnvAlias(['JWT_REFRESH_SECRET', 'REFRESH_SECRET']),
   encryptionKey: requireEnv('ENCRYPTION_KEY'),
-  frontendUrls: (
-    process.env.FRONTEND_URLS ??
-    process.env.FRONTEND_URL ??
-    'http://localhost:5173,http://localhost:5174'
-  )
-    .split(',')
-    .map((url) => url.trim())
-    .filter(Boolean),
+  /** Browser origins allowed by CORS (Netlify + custom domains). Alias: CORS_ORIGIN */
+  frontendUrls,
   appUrl: process.env.APP_URL ?? process.env.STUDENT_PORTAL_URL ?? 'http://localhost:5173',
   superAdminPortalUrl: process.env.SUPER_ADMIN_PORTAL_URL ?? 'http://localhost:5174',
   collegeEmailDomain: process.env.COLLEGE_EMAIL_DOMAIN ?? 'avichi.edu',
@@ -77,4 +93,39 @@ export const env = {
   r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || process.env.R2_SECRET_KEY || undefined,
   r2BucketName: process.env.R2_BUCKET_NAME || process.env.R2_BUCKET || undefined,
   r2PublicUrl: process.env.R2_PUBLIC_URL || undefined,
+  /** Full R2 S3 API endpoint, e.g. https://<accountid>.r2.cloudflarestorage.com */
+  r2Endpoint: process.env.R2_ENDPOINT || undefined,
 };
+
+/** Soft production guardrails (log only — do not crash after secrets already loaded). */
+export function logProductionWarnings(): void {
+  if (!isProduction) return;
+  const warnings: string[] = [];
+  if (frontendUrls.some((u) => u.includes('localhost'))) {
+    warnings.push('FRONTEND_URLS/CORS_ORIGIN still includes localhost — Netlify origins will be blocked if missing.');
+  }
+  if (!env.publicApiUrl.startsWith('https://') && !env.publicApiUrl.includes('localhost')) {
+    warnings.push('PUBLIC_API_URL should be https://api.avichian.in in production.');
+  }
+  const r2Partial =
+    env.r2AccessKeyId || env.r2SecretAccessKey || env.r2BucketName || env.r2AccountId;
+  if (r2Partial && !isR2FullyConfigured()) {
+    warnings.push('R2 env is incomplete — set R2_ACCOUNT_ID, keys, bucket, and R2_PUBLIC_URL (or use local uploads).');
+  }
+  if (env.jwtAccessSecret.length < 32 || env.jwtRefreshSecret.length < 32) {
+    warnings.push('JWT secrets should be at least 32 characters.');
+  }
+  for (const w of warnings) {
+    console.warn(`[production] ${w}`);
+  }
+}
+
+function isR2FullyConfigured(): boolean {
+  return Boolean(
+    (env.r2AccountId || env.r2Endpoint) &&
+      env.r2AccessKeyId &&
+      env.r2SecretAccessKey &&
+      env.r2BucketName &&
+      env.r2PublicUrl,
+  );
+}

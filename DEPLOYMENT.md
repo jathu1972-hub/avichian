@@ -1,157 +1,252 @@
-# AVICHIAN Production Deployment
+# AVICHIAN Production Deployment Guide
 
 ```
-Student App (Netlify)          Super Admin (Netlify)
-avichian.netlify.app           admin.avichian.netlify.app
-app.avichian.in                admin.avichian.in
-         \                          /
-          \                        /
-           ▼                      ▼
-              https://api.avichian.in
-              (Node.js + Express — NOT Netlify)
-                        │
-           ┌────────────┴────────────┐
-           ▼                         ▼
-     PostgreSQL                 Cloudflare R2
+Students                         Super Admin
+    │                                 │
+    ▼                                 ▼
+app.avichian.in              admin.avichian.in
+(or *.netlify.app)           (or *.netlify.app)
+    │                                 │
+    └──────────────┬──────────────────┘
+                   ▼
+            api.avichian.in
+         (Node.js + Express)
+                   │
+        ┌──────────┴──────────┐
+        ▼                     ▼
+   PostgreSQL            Cloudflare R2
 ```
 
-Both frontends call the **same** backend API and database. Never put backend secrets in Netlify frontend env.
+**Do not host the Express API on Netlify.** Use Railway, Render, Fly.io, DigitalOcean, AWS, Azure, GCP, or a college VPS.
 
 ---
 
-## 1. Backend (Railway / Render / Fly / VPS)
+## Repositories
 
-Do **not** host Express on Netlify.
+| Piece | GitHub | Host |
+|-------|--------|------|
+| Student App | [avichian-student-app](https://github.com/jathu1972-hub/avichian-student-app) | Netlify |
+| Super Admin | [avichian-super-admin](https://github.com/jathu1972-hub/avichian-super-admin) | Netlify |
+| Full monorepo (API + both apps) | [avichian](https://github.com/jathu1972-hub/avichian) | API host + optional Netlify base dirs |
 
-### Required env (backend host)
+---
 
-```env
-APP_ENV=production
-NODE_ENV=production
-PORT=4000
+## 1. PostgreSQL
 
-DATABASE_URL=postgresql://...
+Providers: Neon, Supabase, Railway PostgreSQL, self-hosted.
 
-JWT_ACCESS_SECRET=...long-random...
-JWT_REFRESH_SECRET=...long-random...
-ENCRYPTION_KEY=...32-byte-hex-or-strong-secret...
-
-# CORS — every browser origin that calls the API
-FRONTEND_URLS=https://avichian.netlify.app,https://admin.avichian.netlify.app,https://app.avichian.in,https://admin.avichian.in
-
-APP_URL=https://app.avichian.in
-SUPER_ADMIN_PORTAL_URL=https://admin.avichian.in
-PUBLIC_API_URL=https://api.avichian.in
-
-# Cloudflare R2
-R2_ACCOUNT_ID=
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-R2_BUCKET_NAME=
-R2_PUBLIC_URL=https://pub-xxxxx.r2.dev
-
-# Lockout (production defaults)
-MAX_LOGIN_ATTEMPTS=5
-LOCKOUT_DURATION_MINUTES=15
-```
-
-### Deploy steps
+1. Create a database.
+2. Copy the connection string into `DATABASE_URL` (use `?sslmode=require` when offered).
+3. From monorepo:
 
 ```bash
 cd backend
 npm ci
 npx prisma generate
-npx prisma db push   # or migrate deploy
-npm run build
-npm start            # node dist/index.js — bind 0.0.0.0
+npx prisma db push
+# or: npx prisma migrate deploy
 ```
-
-Point DNS `api.avichian.in` → your host. Enable HTTPS (TLS).
 
 ---
 
-## 2. Student App (Netlify)
+## 2. Backend (Railway / Render / Fly / VPS)
 
-| Setting | Value |
-|---------|--------|
-| Base directory | `apps/student-app` |
-| Build command | from `netlify.toml` (builds monorepo shared + app) |
-| Publish directory | `dist` |
+### Environment variables
 
-### Netlify environment variables
+See `backend/.env.example`. Minimum production set:
 
 ```env
-VITE_API_URL=https://api.avichian.in
+APP_ENV=production
+NODE_ENV=production
+PORT=4000
+DATABASE_URL=postgresql://...
+JWT_ACCESS_SECRET=...long-random...
+JWT_REFRESH_SECRET=...long-random...
+ENCRYPTION_KEY=...
+FRONTEND_URLS=https://YOUR-student.netlify.app,https://YOUR-admin.netlify.app
+PUBLIC_API_URL=https://api.avichian.in
 ```
 
-Only `VITE_*` vars are safe for the browser. No JWT secrets.
+Aliases accepted:
 
-### Custom domain
+| Docs name | Also accepted |
+|-----------|----------------|
+| JWT access | `JWT_SECRET` |
+| JWT refresh | `REFRESH_SECRET` |
+| CORS list | `CORS_ORIGIN` |
+| R2 keys | `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET`, `R2_ENDPOINT` |
 
-`app.avichian.in` → this Netlify site.
-
----
-
-## 3. Super Admin (Netlify)
-
-| Setting | Value |
-|---------|--------|
-| Base directory | `apps/super-admin-portal` |
-| Build / publish | from `netlify.toml` → `dist` |
-
-### Environment
-
-```env
-VITE_API_URL=https://api.avichian.in
-```
-
-### Custom domain
-
-`admin.avichian.in` → this Netlify site.
-
----
-
-## 4. How the apps connect
-
-| App | API base |
-|-----|----------|
-| Local Vite | `/api` (proxied to `localhost:4000`) |
-| Netlify production | `VITE_API_URL` + `/api` → `https://api.avichian.in/api` |
-
-Socket.IO uses the same origin as `VITE_API_URL`.
-
-Media paths like `/api/media/...` are resolved against `VITE_API_URL` / `PUBLIC_API_URL` so images work when the SPA is not on the API host.
-
----
-
-## 5. CORS & cookies
-
-- Backend `FRONTEND_URLS` must list every Netlify and custom domain.
-- Production cookies use `SameSite=None; Secure` so cross-origin SPA → API sessions work.
-- JWT access tokens live in `localStorage` on each frontend; refresh tokens are httpOnly cookies on the **API** domain.
-
----
-
-## 6. Local development (unchanged)
+### Deploy steps (monorepo root as build context)
 
 ```bash
-# root
+npm ci
+npm run build -w @avichian/shared
+npm run db:generate -w backend
+npm run build -w backend
+npm run start -w backend
+```
+
+Bind `0.0.0.0` (already configured). Point DNS **api.avichian.in** → host. Enable HTTPS.
+
+### Health check
+
+`GET https://api.avichian.in/api/health` → `{ "success": true, ... }`
+
+---
+
+## 3. Cloudflare R2
+
+Store profile photos, posts, stories, reels, documents.
+
+1. Create bucket + R2 API token (Object Read & Write).
+2. Enable public access or custom domain for `R2_PUBLIC_URL`.
+3. Set:
+
+```env
+R2_ACCOUNT_ID=...
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_BUCKET_NAME=avichian-media
+R2_PUBLIC_URL=https://pub-xxxxx.r2.dev
+# optional: R2_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com
+```
+
+Without R2, files go to `backend/uploads` (single-instance only).
+
+---
+
+## 4. Student App → Netlify
+
+**Preferred:** connect [avichian-student-app](https://github.com/jathu1972-hub/avichian-student-app)
+
+| Setting | Value |
+|---------|--------|
+| Build command | `npm run build` (from `netlify.toml`) |
+| Publish | `dist` |
+| Node | 20 |
+
+**Environment (build-time):**
+
+```env
+VITE_API_URL=https://api.avichian.in
+```
+
+SPA routing: `netlify.toml` + `public/_redirects` → `/* → /index.html` (200).
+
+Optional site name: `avichian` → `https://avichian.netlify.app`  
+Custom domain: `app.avichian.in`
+
+---
+
+## 5. Super Admin → Netlify
+
+Connect [avichian-super-admin](https://github.com/jathu1972-hub/avichian-super-admin)
+
+Same build/publish as student. Same `VITE_API_URL`.
+
+| Extra | Notes |
+|-------|--------|
+| Role guard | SPA only allows `SUPER_ADMIN`; API re-checks every route |
+| Site name | e.g. `admin-avichian` |
+
+Custom domain: `admin.avichian.in`
+
+---
+
+## 6. CORS & cookies
+
+After both Netlify URLs exist, set backend:
+
+```env
+FRONTEND_URLS=https://avichian.netlify.app,https://admin-avichian.netlify.app,https://app.avichian.in,https://admin.avichian.in
+```
+
+Production refresh cookies use **SameSite=None; Secure** so cross-origin SPA → API sessions work. API must be **HTTPS**.
+
+---
+
+## 7. Custom domains & SSL
+
+| Host | Domain | SSL |
+|------|--------|-----|
+| Netlify student | `app.avichian.in` | Automatic (Netlify) |
+| Netlify admin | `admin.avichian.in` | Automatic |
+| API host | `api.avichian.in` | Host TLS or Cloudflare proxy |
+
+DNS: CNAME/A as your host documents. Add each domain to `FRONTEND_URLS`.
+
+---
+
+## 8. Production smoke checklist
+
+- [ ] `GET /api/health` OK  
+- [ ] Student login → Home  
+- [ ] Registration (master-approved path)  
+- [ ] Friend search + requests  
+- [ ] Posts / Stories / Reels create + view media  
+- [ ] Chat  
+- [ ] Voice / video call signaling (WebRTC needs HTTPS)  
+- [ ] Notifications  
+- [ ] Profile + photo upload  
+- [ ] Super Admin login (SUPER_ADMIN only)  
+- [ ] Admin: students, moderation, reports, announcements  
+- [ ] No CORS errors in browser console  
+- [ ] Refresh session after hard reload  
+
+---
+
+## 9. Security (implemented)
+
+| Control | Status |
+|---------|--------|
+| Helmet | Yes |
+| CORS allowlist | Yes (`FRONTEND_URLS` / `CORS_ORIGIN`) |
+| CSRF double-submit | Yes on mutating routes |
+| JWT access + rotated refresh | Yes |
+| bcrypt passwords | Yes |
+| Prisma parameterized queries | Yes (SQL injection) |
+| Rate limit on auth/OTP | Yes |
+| Production lockout | 5 fails / 15 min |
+| Secure cookies (prod) | SameSite=None; Secure |
+| SUPER_ADMIN API middleware | Yes |
+| No secrets in `VITE_*` | Enforced by design |
+
+---
+
+## 10. Performance (frontends)
+
+- Route-level **lazy loading** (`React.lazy` + `Suspense`)
+- **Manual chunks** (react, framer-motion, socket.io)
+- Asset long-cache headers on Netlify `/assets/*`
+- Production `vite build` with tree-shaking
+
+---
+
+## 11. Local development
+
+```bash
+# Monorepo (all three)
+cd avichian
 npm run dev
 # Student http://localhost:5173
 # Admin   http://localhost:5174
 # API     http://localhost:4000
+
+# Or separate frontends + monorepo API
+cd avichian && npm run dev -w backend
+cd avichian-student-app && npm run dev
+cd avichian-super-admin && npm run dev
 ```
 
-Leave `VITE_API_URL` unset locally so Vite’s proxy is used.
+Leave `VITE_API_URL` empty locally (Vite proxy).
 
 ---
 
-## 7. Checklist before go-live
+## Remaining before “real” production
 
-- [ ] Backend health: `https://api.avichian.in/api/health`
-- [ ] Student login → Home
-- [ ] Super Admin login → Dashboard (SUPER_ADMIN only)
-- [ ] Create student in admin → login on student app
-- [ ] Upload story / post → media loads from R2 or `api.../api/media`
-- [ ] Friend search + chat
-- [ ] CORS errors absent in browser console
+1. Deploy API with real secrets and DNS for `api.avichian.in`  
+2. Create two Netlify sites; set `VITE_API_URL`; redeploy after env change  
+3. Update `FRONTEND_URLS` with exact Netlify URLs  
+4. Configure R2 for media durability  
+5. Bootstrap super admin (`backend/scripts/bootstrap-super-admin.ts`)  
+6. Full WebRTC/LiveKit for production-grade calls if needed beyond signaling  

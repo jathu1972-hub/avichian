@@ -1,28 +1,76 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { appHomePath, isAppUserRole } from './lib/portal';
 import { SplashScreen } from './components/auth/SplashScreen';
 import { PortalRedirect } from './components/auth/PortalRedirect';
 import { StudentLayout } from './layouts/StudentLayout';
-import { FeedPage } from './pages/student/FeedPage';
-import { SearchPage } from './pages/student/SearchPage';
-import { CreatePostPage } from './pages/student/CreatePostPage';
-import { FriendsPage } from './pages/student/FriendsPage';
-import { ProfilePage } from './pages/student/ProfilePage';
-import { UserProfilePage } from './pages/student/UserProfilePage';
-import { ChatPage } from './pages/student/ChatPage';
-import { ConversationPage } from './pages/student/ConversationPage';
-import { CallPage } from './pages/student/CallPage';
-import { CommunitiesPage } from './pages/student/CommunitiesPage';
-import { EventsPage } from './pages/student/EventsPage';
-import { CalendarPage } from './pages/student/CalendarPage';
-import { NotificationsPage } from './pages/student/NotificationsPage';
-import { SettingsPage } from './pages/student/SettingsPage';
-import { StaffToolsPage } from './pages/student/StaffToolsPage';
-import { ReelsPage } from './pages/student/ReelsPage';
-import { LoginPage } from './pages/LoginPage';
-import { RegisterPage } from './pages/RegisterPage';
-import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+
+const LoginPage = lazy(() =>
+  import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })),
+);
+const RegisterPage = lazy(() =>
+  import('./pages/RegisterPage').then((m) => ({ default: m.RegisterPage })),
+);
+const ForgotPasswordPage = lazy(() =>
+  import('./pages/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })),
+);
+const FeedPage = lazy(() =>
+  import('./pages/student/FeedPage').then((m) => ({ default: m.FeedPage })),
+);
+const SearchPage = lazy(() =>
+  import('./pages/student/SearchPage').then((m) => ({ default: m.SearchPage })),
+);
+const CreatePostPage = lazy(() =>
+  import('./pages/student/CreatePostPage').then((m) => ({ default: m.CreatePostPage })),
+);
+const FriendsPage = lazy(() =>
+  import('./pages/student/FriendsPage').then((m) => ({ default: m.FriendsPage })),
+);
+const ProfilePage = lazy(() =>
+  import('./pages/student/ProfilePage').then((m) => ({ default: m.ProfilePage })),
+);
+const UserProfilePage = lazy(() =>
+  import('./pages/student/UserProfilePage').then((m) => ({ default: m.UserProfilePage })),
+);
+const ChatPage = lazy(() =>
+  import('./pages/student/ChatPage').then((m) => ({ default: m.ChatPage })),
+);
+const ConversationPage = lazy(() =>
+  import('./pages/student/ConversationPage').then((m) => ({ default: m.ConversationPage })),
+);
+const CallPage = lazy(() =>
+  import('./pages/student/CallPage').then((m) => ({ default: m.CallPage })),
+);
+const CommunitiesPage = lazy(() =>
+  import('./pages/student/CommunitiesPage').then((m) => ({ default: m.CommunitiesPage })),
+);
+const EventsPage = lazy(() =>
+  import('./pages/student/EventsPage').then((m) => ({ default: m.EventsPage })),
+);
+const CalendarPage = lazy(() =>
+  import('./pages/student/CalendarPage').then((m) => ({ default: m.CalendarPage })),
+);
+const NotificationsPage = lazy(() =>
+  import('./pages/student/NotificationsPage').then((m) => ({ default: m.NotificationsPage })),
+);
+const SettingsPage = lazy(() =>
+  import('./pages/student/SettingsPage').then((m) => ({ default: m.SettingsPage })),
+);
+const StaffToolsPage = lazy(() =>
+  import('./pages/student/StaffToolsPage').then((m) => ({ default: m.StaffToolsPage })),
+);
+const ReelsPage = lazy(() =>
+  import('./pages/student/ReelsPage').then((m) => ({ default: m.ReelsPage })),
+);
+
+function PageFallback() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary/20 border-t-primary" />
+    </div>
+  );
+}
 
 function AppBootstrap({ children }: { children: React.ReactNode }) {
   const { loading } = useAuth();
@@ -53,52 +101,69 @@ function AppUserRoute({ children }: { children: React.ReactNode }) {
   return children;
 }
 
+function LazyCall({ mode }: { mode: 'voice' | 'video' }) {
+  return (
+    <Suspense fallback={<PageFallback />}>
+      <CallPage mode={mode} />
+    </Suspense>
+  );
+}
+
 export default function App() {
   return (
     <AppBootstrap>
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <GuestRoute>
-              <Navigate to="/login" replace />
-            </GuestRoute>
-          }
-        />
-        <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
-        <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
-        <Route path="/forgot-password" element={<GuestRoute><ForgotPasswordPage /></GuestRoute>} />
+      <Suspense fallback={<SplashScreen />}>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <GuestRoute>
+                <Navigate to="/login" replace />
+              </GuestRoute>
+            }
+          />
+          <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
+          <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
+          <Route path="/forgot-password" element={<GuestRoute><ForgotPasswordPage /></GuestRoute>} />
 
-        <Route path="/feed" element={<Navigate to="/home" replace />} />
-        <Route
-          path="/home"
-          element={
-            <AppUserRoute>
-              <StudentLayout />
-            </AppUserRoute>
-          }
-        >
-          <Route index element={<FeedPage />} />
-          <Route path="search" element={<SearchPage />} />
-          <Route path="create" element={<CreatePostPage />} />
-          <Route path="reels" element={<ReelsPage />} />
-          <Route path="friends" element={<FriendsPage />} />
-          <Route path="chat" element={<ChatPage />} />
-          <Route path="chat/:userId" element={<ConversationPage />} />
-          <Route path="call/voice/:userId" element={<CallPage mode="voice" />} />
-          <Route path="call/video/:userId" element={<CallPage mode="video" />} />
-          <Route path="communities" element={<CommunitiesPage />} />
-          <Route path="events" element={<EventsPage />} />
-          <Route path="calendar" element={<CalendarPage />} />
-          <Route path="notifications" element={<NotificationsPage />} />
-          <Route path="profile" element={<ProfilePage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="staff-tools" element={<StaffToolsPage />} />
-          <Route path="user/:userId" element={<UserProfilePage />} />
-        </Route>
+          <Route path="/feed" element={<Navigate to="/home" replace />} />
+          <Route
+            path="/home"
+            element={
+              <AppUserRoute>
+                <StudentLayout />
+              </AppUserRoute>
+            }
+          >
+            <Route
+              index
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <FeedPage />
+                </Suspense>
+              }
+            />
+            <Route path="search" element={<Suspense fallback={<PageFallback />}><SearchPage /></Suspense>} />
+            <Route path="create" element={<Suspense fallback={<PageFallback />}><CreatePostPage /></Suspense>} />
+            <Route path="reels" element={<Suspense fallback={<PageFallback />}><ReelsPage /></Suspense>} />
+            <Route path="friends" element={<Suspense fallback={<PageFallback />}><FriendsPage /></Suspense>} />
+            <Route path="chat" element={<Suspense fallback={<PageFallback />}><ChatPage /></Suspense>} />
+            <Route path="chat/:userId" element={<Suspense fallback={<PageFallback />}><ConversationPage /></Suspense>} />
+            <Route path="call/voice/:userId" element={<LazyCall mode="voice" />} />
+            <Route path="call/video/:userId" element={<LazyCall mode="video" />} />
+            <Route path="communities" element={<Suspense fallback={<PageFallback />}><CommunitiesPage /></Suspense>} />
+            <Route path="events" element={<Suspense fallback={<PageFallback />}><EventsPage /></Suspense>} />
+            <Route path="calendar" element={<Suspense fallback={<PageFallback />}><CalendarPage /></Suspense>} />
+            <Route path="notifications" element={<Suspense fallback={<PageFallback />}><NotificationsPage /></Suspense>} />
+            <Route path="profile" element={<Suspense fallback={<PageFallback />}><ProfilePage /></Suspense>} />
+            <Route path="settings" element={<Suspense fallback={<PageFallback />}><SettingsPage /></Suspense>} />
+            <Route path="staff-tools" element={<Suspense fallback={<PageFallback />}><StaffToolsPage /></Suspense>} />
+            <Route path="user/:userId" element={<Suspense fallback={<PageFallback />}><UserProfilePage /></Suspense>} />
+          </Route>
 
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Suspense>
     </AppBootstrap>
   );
 }

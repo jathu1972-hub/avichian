@@ -100,7 +100,7 @@ let s3Client: S3Client | null = null;
 
 function isR2Configured(): boolean {
   return Boolean(
-    env.r2AccountId &&
+    (env.r2AccountId || env.r2Endpoint) &&
       env.r2AccessKeyId &&
       env.r2SecretAccessKey &&
       env.r2BucketName &&
@@ -110,9 +110,15 @@ function isR2Configured(): boolean {
 
 function getS3(): S3Client {
   if (!s3Client) {
+    const endpoint =
+      env.r2Endpoint ||
+      (env.r2AccountId ? `https://${env.r2AccountId}.r2.cloudflarestorage.com` : undefined);
+    if (!endpoint) {
+      throw new Error('R2_ENDPOINT or R2_ACCOUNT_ID is required when using Cloudflare R2');
+    }
     s3Client = new S3Client({
       region: 'auto',
-      endpoint: `https://${env.r2AccountId}.r2.cloudflarestorage.com`,
+      endpoint,
       credentials: {
         accessKeyId: env.r2AccessKeyId!,
         secretAccessKey: env.r2SecretAccessKey!,
