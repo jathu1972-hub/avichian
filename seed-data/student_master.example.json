@@ -1,0 +1,16 @@
+{
+  "college": "Avichi Arts and Science College",
+  "department": "Visual Communication",
+  "students": [
+    {
+      "name": "JANE DOE",
+      "reg_no": "25VCM99",
+      "mobile": "9000000000",
+      "email": "janedoe@avichi.edu",
+      "department": "Visual Communication",
+      "year": 2025,
+      "role": "student",
+      "verified": true
+    }
+  ]
+}

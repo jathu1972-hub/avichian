@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: avichian
+          POSTGRES_PASSWORD: avichian_test
+          POSTGRES_DB: avichian_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://avichian:avichian_test@localhost:5432/avichian_test?schema=public
+      JWT_ACCESS_SECRET: ci-access-secret-min-32-characters-long
+      JWT_REFRESH_SECRET: ci-refresh-secret-min-32-characters-long
+      ENCRYPTION_KEY: ci-encryption-key-32-bytes-hex!!
+      NODE_ENV: test
+      SMS_PROVIDER: console
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared package
+        run: npm run build -w shared
+
+      - name: Generate Prisma client
+        run: npm run db:generate -w backend
+
+      - name: Push database schema
+        run: npm run db:push -w backend
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test -w backend

@@ -1,0 +1,28 @@
+{
+  "name": "avichian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Avichian — private campus platform for Avichi Arts and Science College",
+  "workspaces": [
+    "apps/*",
+    "backend",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,app,admin -c blue,green,yellow \"npm run dev -w backend\" \"npm run dev -w @avichian/student-app\" \"npm run dev -w @avichian/super-admin-portal\"",
+    "dev:app": "concurrently \"npm run dev -w backend\" \"npm run dev -w @avichian/student-app\"",
+    "dev:admin": "concurrently \"npm run dev -w backend\" \"npm run dev -w @avichian/super-admin-portal\"",
+    "build": "npm run build -w shared && npm run build -w backend && npm run build -w @avichian/student-app && npm run build -w @avichian/super-admin-portal",
+    "lint": "npm run lint -w shared && npm run lint -w backend && npm run lint -w @avichian/student-app && npm run lint -w @avichian/super-admin-portal",
+    "test": "npm run test -w backend",
+    "db:generate": "npm run db:generate -w backend",
+    "db:migrate": "npm run db:migrate -w backend",
+    "db:push": "npm run db:push -w backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

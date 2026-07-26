@@ -1,0 +1,21 @@
+# Netlify site: Super Admin (e.g. admin.avichian.netlify.app or admin.avichian.in)
+# Connect this site with Base directory = apps/super-admin-portal
+
+[build]
+  command = "cd ../.. && npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/super-admin-portal"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

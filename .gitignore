@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# Student PII — never commit real roster data
+seed-data/student_master.json
+seed-data/*.csv
+!seed-data/student_master.example.json
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Prisma
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# Uploads (local dev / local object storage fallback)
+uploads/
+backend/uploads/
+temp/
+
+# Capacitor
+frontend/android/
+frontend/ios/
+seed-data/*.bak
+*.tsbuildinfo
+

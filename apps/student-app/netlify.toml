@@ -1,0 +1,24 @@
+# Netlify site: Student App (e.g. avichian.netlify.app or app.avichian.in)
+# Connect this site to the monorepo with Base directory = apps/student-app
+
+[build]
+  # Monorepo: install from repo root so @avichian/shared resolves
+  command = "cd ../.. && npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/student-app"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA fallback — React Router
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Security headers (frontend only — API is on api.avichian.in)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
