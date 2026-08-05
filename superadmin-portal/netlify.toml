@@ -1,17 +1,9 @@
-# Super Admin Portal — Netlify static SPA
-#
-# Netlify UI:
-#   Base directory: monorepo root (recommended)
-#   Publish directory: superadmin-portal/dist
-#
-# Environment:
-#   VITE_API_URL = https://YOUR-API.onrender.com
-#
-# Backend CORS must include this site origin (FRONTEND_URLS).
+# Super Admin — Netlify site
+# Netlify UI: Base directory = superadmin-portal
 
 [build]
-  command = "npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/super-admin-portal"
-  publish = "superadmin-portal/dist"
+  command = "cd .. && npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/super-admin-portal"
+  publish = "dist"
 
 [build.environment]
   NODE_VERSION = "20"

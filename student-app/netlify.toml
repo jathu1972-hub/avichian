@@ -1,23 +1,14 @@
-# Student App — Netlify static SPA
-#
-# Netlify UI settings:
-#   Base directory: student-app   (OR leave empty and use monorepo root commands below)
-#   Publish:        dist          (when base = student-app)
-#   OR publish:     student-app/dist (when base = monorepo root)
-#
-# Environment variables (Site → Environment):
-#   VITE_API_URL = https://YOUR-API.onrender.com
-#   (origin only is OK; trailing /api also accepted by the app)
+# Student App — Netlify site
+# Netlify UI: Base directory = student-app
+# Publish is relative to base → student-app/dist
 
 [build]
-  # When Netlify Base directory = monorepo root (recommended):
-  command = "npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/student-app"
-  publish = "student-app/dist"
+  command = "cd .. && npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/student-app"
+  publish = "dist"
 
 [build.environment]
   NODE_VERSION = "20"
 
-# SPA fallback
 [[redirects]]
   from = "/*"
   to = "/index.html"

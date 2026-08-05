@@ -61,3 +61,11 @@ tmp-cookies.txt
 # Misc
 *.bak
 .cache/
+
+# Netlify CLI local state
+.netlify/
+
+
+.netlify-sites.json
+tmp-netlify-sites.json
+
