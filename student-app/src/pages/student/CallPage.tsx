@@ -831,41 +831,79 @@ export function CallPage({ mode }: { mode: 'voice' | 'video' }) {
   }, [speakerOn]);
 
   async function acquireVideoTrack(next: 'user' | 'environment'): Promise<MediaStreamTrack> {
-    // Enumerate cameras when possible for reliable front/back switch
+    // Enumerate cameras for reliable front/back switch (labels need prior permission)
     try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cams = devices.filter((d) => d.kind === 'videoinput');
-      videoDeviceIdsRef.current = cams.map((c) => c.deviceId).filter(Boolean);
-      if (cams.length > 1) {
-        const currentId = localStreamRef.current?.getVideoTracks()[0]?.getSettings()?.deviceId;
-        const other =
-          cams.find((c) => c.deviceId && c.deviceId !== currentId) ??
-          cams[next === 'environment' ? cams.length - 1 : 0];
-        if (other?.deviceId) {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              deviceId: { ideal: other.deviceId },
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            },
-            audio: false,
-          });
-          return stream.getVideoTracks()[0];
-        }
+      // Warm permission so labels populate
+      try {
+        const warm = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        warm.getTracks().forEach((t) => t.stop());
+      } catch {
+        /* ignore */
       }
-    } catch {
-      /* fall through to facingMode */
+
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter((d) => d.kind === 'videoinput' && d.deviceId);
+      videoDeviceIdsRef.current = cams.map((c) => c.deviceId);
+
+      const isBack = (label: string) =>
+        /back|rear|environment|world|facing back/i.test(label);
+      const isFront = (label: string) =>
+        /front|user|face|facing front|selfie/i.test(label);
+
+      let preferred: MediaDeviceInfo | undefined;
+      if (next === 'environment') {
+        preferred =
+          cams.find((c) => isBack(c.label)) ??
+          (cams.length > 1 ? cams[cams.length - 1] : undefined);
+      } else {
+        preferred =
+          cams.find((c) => isFront(c.label)) ??
+          cams[0];
+      }
+
+      // Avoid re-selecting the current device when multiple cams exist
+      const currentId = localStreamRef.current?.getVideoTracks()[0]?.getSettings()?.deviceId;
+      if (preferred?.deviceId && preferred.deviceId === currentId && cams.length > 1) {
+        preferred = cams.find((c) => c.deviceId !== currentId) ?? preferred;
+      }
+
+      if (preferred?.deviceId) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: { exact: preferred.deviceId },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+        return stream.getVideoTracks()[0]!;
+      }
+    } catch (err) {
+      console.warn('[call] deviceId camera select failed, trying facingMode', err);
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: next },
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      },
-      audio: false,
-    });
-    return stream.getVideoTracks()[0];
+    // facingMode: try exact first (mobile), then ideal
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { exact: next },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      return stream.getVideoTracks()[0]!;
+    } catch {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: next },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      return stream.getVideoTracks()[0]!;
+    }
   }
 
   async function switchCamera(target?: 'user' | 'environment') {

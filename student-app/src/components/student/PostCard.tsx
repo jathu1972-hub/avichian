@@ -9,6 +9,7 @@ import {
   hidePost,
   updatePost,
 } from '../../lib/social';
+import { resolveMediaUrl } from '../../lib/config';
 import { isVideoMedia } from '../../lib/media';
 import { MediaPlayer } from '../media/MediaPlayer';
 import { PostVideoPlayer } from '../media/PostVideoPlayer';
@@ -170,19 +171,22 @@ export function PostCard({ post, onLike, liking, onRemoved, onUpdated, toast }: 
         </div>
 
         {post.mediaUrl ? (
-          isVideoMedia({
-            mediaUrl: post.mediaUrl,
-            mediaMimeType: post.mediaMimeType,
-          }) ? (
-            <PostVideoPlayer src={post.mediaUrl} mimeType={post.mediaMimeType} />
-          ) : (
-            <MediaPlayer
-              src={post.mediaUrl}
-              mimeType={post.mediaMimeType}
-              variant="feed"
-              className="max-h-[min(70vh,28rem)] w-full object-cover"
-            />
-          )
+          (() => {
+            const src = resolveMediaUrl(post.mediaUrl) ?? post.mediaUrl;
+            return isVideoMedia({
+              mediaUrl: src,
+              mediaMimeType: post.mediaMimeType,
+            }) ? (
+              <PostVideoPlayer src={src} mimeType={post.mediaMimeType} />
+            ) : (
+              <MediaPlayer
+                src={src}
+                mimeType={post.mediaMimeType}
+                variant="feed"
+                className="max-h-[min(70vh,28rem)] w-full object-cover"
+              />
+            );
+          })()
         ) : null}
 
         <div className="min-w-0 space-y-2 p-3 sm:p-4">

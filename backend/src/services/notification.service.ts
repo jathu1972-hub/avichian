@@ -83,6 +83,21 @@ export async function deleteNotification(userId: string, notificationId: string)
   return { ok: true };
 }
 
+/** Permanently delete all notifications for a user (explicit "Delete all" only). */
+export async function clearAllNotifications(userId: string) {
+  const rows = await prisma.notification.findMany({
+    where: { userId },
+    select: { id: true },
+  });
+  if (!rows.length) return { ok: true, deleted: 0 };
+  await prisma.notification.deleteMany({ where: { userId } });
+  for (const r of rows) {
+    emitToUser(userId, 'notification:deleted', { id: r.id });
+  }
+  emitToUser(userId, 'notification:read', { ids: null });
+  return { ok: true, deleted: rows.length };
+}
+
 /** Remove friend-request notifications tied to a request id (accept/reject). */
 export async function deleteFriendRequestNotifications(receiverId: string, requestId: string) {
   const rows = await prisma.notification.findMany({

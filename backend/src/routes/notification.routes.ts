@@ -4,6 +4,7 @@ import { authenticate, requirePasswordReady, type AuthRequest } from '../middlew
 import { requireRoles } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validate.js';
 import {
+  clearAllNotifications,
   deleteNotification,
   listNotifications,
   markNotificationsRead,
@@ -22,6 +23,7 @@ notificationRouter.get('/', async (req: AuthRequest, res, next) => {
   }
 });
 
+/** Mark one or all as read — never deletes */
 notificationRouter.post(
   '/read',
   validateBody(z.object({ ids: z.array(z.string().uuid()).optional() })),
@@ -34,6 +36,26 @@ notificationRouter.post(
     }
   },
 );
+
+/** Alias used by some clients */
+notificationRouter.post('/read-all', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await markNotificationsRead(req.user!.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** Explicit permanent clear */
+notificationRouter.post('/clear', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await clearAllNotifications(req.user!.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
 
 notificationRouter.delete('/:id', async (req: AuthRequest, res, next) => {
   try {

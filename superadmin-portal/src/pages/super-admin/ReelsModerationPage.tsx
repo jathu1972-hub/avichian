@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
+import { MediaPreview } from '../../components/MediaPreview';
 import { api } from '../../lib/api';
-import { resolveMediaUrl } from '../../lib/config';
 
 interface AdminReel {
   id: string;
@@ -95,22 +95,12 @@ export function ReelsModerationPage() {
         <div className="space-y-3">
           {items.map((r) => (
             <div key={r.id} className="glass-card flex flex-wrap gap-4 rounded-[24px] p-4">
-              <div className="h-28 w-20 overflow-hidden rounded-xl bg-black">
-                {r.coverUrl ? (
-                  <img
-                    src={resolveMediaUrl(r.coverUrl) ?? r.coverUrl}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <video
-                    src={resolveMediaUrl(r.mediaUrl) ?? r.mediaUrl}
-                    className="h-full w-full object-cover"
-                    muted
-                    preload="metadata"
-                  />
-                )}
-              </div>
+              <MediaPreview
+                url={r.coverUrl || r.mediaUrl}
+                mediaKind={r.coverUrl ? 'image' : 'video'}
+                caption={r.caption}
+                thumb
+              />
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-slate-900">
                   {r.author.name}{' '}

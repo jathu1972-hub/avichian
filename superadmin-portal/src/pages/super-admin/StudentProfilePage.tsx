@@ -17,9 +17,11 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { isValidPasswordDetailed } from '@avichian/shared';
+import { MediaPreview } from '../../components/MediaPreview';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { api } from '../../lib/api';
+import { resolveMediaUrl } from '../../lib/config';
 
 type TabId = 'posts' | 'stories' | 'comments' | 'reports' | 'activity' | 'security';
 
@@ -511,7 +513,11 @@ export function StudentProfilePage() {
           <div className="-mt-14 flex flex-wrap items-end gap-4">
             <div className="h-28 w-28 overflow-hidden rounded-full border-4 border-white bg-slate-200 shadow-md">
               {p.profilePhotoUrl ? (
-                <img src={p.profilePhotoUrl} alt="" className="h-full w-full object-cover" />
+                <img
+                  src={resolveMediaUrl(p.profilePhotoUrl) ?? p.profilePhotoUrl ?? ''}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
               ) : (
                 <div className="flex h-full w-full items-center justify-center bg-primary/15 text-2xl font-bold text-primary">
                   {p.fullName.slice(0, 1).toUpperCase()}
@@ -780,7 +786,14 @@ export function StudentProfilePage() {
                 <div className="flex items-start gap-3">
                   <div className="h-10 w-10 overflow-hidden rounded-full bg-slate-200">
                     {post.author.profilePhotoUrl ? (
-                      <img src={post.author.profilePhotoUrl} alt="" className="h-full w-full object-cover" />
+                      <img
+                        src={
+                          resolveMediaUrl(post.author.profilePhotoUrl) ??
+                          post.author.profilePhotoUrl
+                        }
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
                     ) : null}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -795,12 +808,12 @@ export function StudentProfilePage() {
                     </div>
                     {post.caption ? <p className="mt-2 text-sm text-slate-700">{post.caption}</p> : null}
                     {post.mediaUrl ? (
-                      <div className="mt-3 overflow-hidden rounded-2xl bg-slate-100">
-                        {post.mediaKind === 'video' ? (
-                          <video src={post.mediaUrl} controls className="max-h-80 w-full object-contain" />
-                        ) : (
-                          <img src={post.mediaUrl} alt="" className="max-h-80 w-full object-contain" />
-                        )}
+                      <div className="mt-3">
+                        <MediaPreview
+                          url={post.mediaUrl}
+                          mediaKind={post.mediaKind}
+                          caption={post.caption}
+                        />
                       </div>
                     ) : null}
                     <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
@@ -855,11 +868,7 @@ export function StudentProfilePage() {
             data.stories.map((s) => (
               <div key={s.id} className="glass-card overflow-hidden rounded-[24px] shadow-soft">
                 <div className="aspect-[9/16] max-h-72 bg-slate-900">
-                  {/\.(mp4|webm|mov)/i.test(s.mediaUrl) ? (
-                    <video src={s.mediaUrl} className="h-full w-full object-cover" controls />
-                  ) : (
-                    <img src={s.mediaUrl} alt="" className="h-full w-full object-cover" />
-                  )}
+                  <MediaPreview url={s.mediaUrl} caption={s.caption} />
                 </div>
                 <div className="space-y-2 p-4">
                   {s.caption ? <p className="text-sm">{s.caption}</p> : null}

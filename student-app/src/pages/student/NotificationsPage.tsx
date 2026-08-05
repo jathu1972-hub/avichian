@@ -2,6 +2,7 @@ import {
   Bell,
   Calendar,
   Check,
+  CheckCheck,
   Heart,
   Megaphone,
   MessageCircle,
@@ -22,6 +23,7 @@ import {
   rejectFriendRequest,
 } from '../../lib/social';
 import { connectSocket } from '../../lib/socket';
+import { api } from '../../lib/api';
 
 interface Notif {
   id: string;
@@ -52,6 +54,8 @@ const icons: Record<string, typeof Bell> = {
   EVENT_REMINDER: Calendar,
 };
 
+type Filter = 'all' | 'unread' | 'read';
+
 function dayBucket(iso: string): 'today' | 'yesterday' | 'earlier' {
   const d = new Date(iso);
   const now = new Date();
@@ -63,6 +67,10 @@ function dayBucket(iso: string): 'today' | 'yesterday' | 'earlier' {
   return 'earlier';
 }
 
+function isUnread(n: Notif) {
+  return !n.readAt && !n.isRead;
+}
+
 export function NotificationsPage() {
   const [items, setItems] = useState<Notif[]>([]);
   const [unread, setUnread] = useState(0);
@@ -70,6 +78,7 @@ export function NotificationsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
 
   const load = useCallback(async () => {
     const data = await fetchNotifications();
@@ -90,33 +99,42 @@ export function NotificationsPage() {
     function onDeleted(payload: { id: string }) {
       setItems((prev) => {
         const gone = prev.find((x) => x.id === payload.id);
-        if (gone && !gone.readAt && !gone.isRead) {
+        if (gone && isUnread(gone)) {
           setUnread((u) => Math.max(0, u - 1));
         }
         return prev.filter((x) => x.id !== payload.id);
       });
     }
-    function onFriendAccept() {
+    function onRead() {
+      // Mark-all / mark-read: keep history, only refresh unread badge via reload of counts
       void load();
     }
-    function onFriendRequest() {
+    function onFriendAccept() {
       void load();
     }
     socket.on('notification', onNew);
     socket.on('notification:new', onNew);
     socket.on('notification:deleted', onDeleted);
+    socket.on('notification:read', onRead);
     socket.on('friend:accept', onFriendAccept);
-    socket.on('friend:request', onFriendRequest);
+    socket.on('friend:request', onFriendAccept);
     socket.on('friend:reject', onFriendAccept);
     return () => {
       socket.off('notification', onNew);
       socket.off('notification:new', onNew);
       socket.off('notification:deleted', onDeleted);
+      socket.off('notification:read', onRead);
       socket.off('friend:accept', onFriendAccept);
-      socket.off('friend:request', onFriendRequest);
+      socket.off('friend:request', onFriendAccept);
       socket.off('friend:reject', onFriendAccept);
     };
   }, [load]);
+
+  const visible = useMemo(() => {
+    if (filter === 'unread') return items.filter(isUnread);
+    if (filter === 'read') return items.filter((n) => !isUnread(n));
+    return items;
+  }, [items, filter]);
 
   const grouped = useMemo(() => {
     const g: Record<'today' | 'yesterday' | 'earlier', Notif[]> = {
@@ -124,14 +142,46 @@ export function NotificationsPage() {
       yesterday: [],
       earlier: [],
     };
-    for (const n of items) g[dayBucket(n.createdAt)].push(n);
+    for (const n of visible) g[dayBucket(n.createdAt)].push(n);
     return g;
-  }, [items]);
+  }, [visible]);
 
+  /** Mark all as read — never deletes rows. */
   async function markAll() {
-    await markNotificationsRead();
-    setItems((prev) => prev.map((n) => ({ ...n, readAt: n.readAt ?? new Date().toISOString(), isRead: true })));
-    setUnread(0);
+    try {
+      setError('');
+      await markNotificationsRead();
+      const now = new Date().toISOString();
+      setItems((prev) =>
+        prev.map((n) => ({
+          ...n,
+          readAt: n.readAt ?? now,
+          isRead: true,
+        })),
+      );
+      setUnread(0);
+      setToast('All notifications marked as read');
+      window.setTimeout(() => setToast(''), 2200);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not mark as read');
+    }
+  }
+
+  async function markOneRead(n: Notif) {
+    if (!isUnread(n)) return;
+    try {
+      await markNotificationsRead([n.id]);
+      setItems((prev) =>
+        prev.map((x) =>
+          x.id === n.id
+            ? { ...x, readAt: new Date().toISOString(), isRead: true }
+            : x,
+        ),
+      );
+      setUnread((u) => Math.max(0, u - 1));
+    } catch {
+      /* ignore */
+    }
   }
 
   async function accept(n: Notif) {
@@ -141,9 +191,6 @@ export function NotificationsPage() {
       setError('This friend request is missing its id. Refresh and try again.');
       return;
     }
-    // Optimistic remove
-    setItems((prev) => prev.filter((x) => x.id !== n.id));
-    setUnread((u) => Math.max(0, u - 1));
     try {
       setBusyId(n.id);
       setError('');
@@ -152,6 +199,8 @@ export function NotificationsPage() {
       } else if (peerUserId) {
         await acceptFriendByUserId(peerUserId);
       }
+      // Friend-request notif may be deleted server-side on accept — reload list
+      await load();
       setToast('You are now friends');
       window.setTimeout(() => setToast(''), 2800);
     } catch (err) {
@@ -168,12 +217,11 @@ export function NotificationsPage() {
       setError('Cannot reject — missing request id');
       return;
     }
-    setItems((prev) => prev.filter((x) => x.id !== n.id));
-    setUnread((u) => Math.max(0, u - 1));
     try {
       setBusyId(n.id);
       setError('');
       await rejectFriendRequest(requestId);
+      await load();
       setToast('Request declined');
       window.setTimeout(() => setToast(''), 2200);
     } catch (err) {
@@ -188,8 +236,30 @@ export function NotificationsPage() {
     try {
       await deleteNotification(n.id);
       setItems((prev) => prev.filter((x) => x.id !== n.id));
+      if (isUnread(n)) setUnread((u) => Math.max(0, u - 1));
     } catch {
       /* ignore */
+    }
+  }
+
+  async function deleteAll() {
+    if (!items.length) return;
+    if (!window.confirm('Delete all notifications permanently?')) return;
+    try {
+      await api('/notifications/clear', { method: 'POST', body: JSON.stringify({}) });
+      setItems([]);
+      setUnread(0);
+      setToast('All notifications deleted');
+      window.setTimeout(() => setToast(''), 2200);
+    } catch {
+      // Fallback: delete one by one if clear endpoint missing
+      try {
+        await Promise.all(items.map((n) => deleteNotification(n.id)));
+        setItems([]);
+        setUnread(0);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Delete all failed');
+      }
     }
   }
 
@@ -202,18 +272,28 @@ export function NotificationsPage() {
           const Icon = icons[n.type] ?? Bell;
           const isFriendReq =
             n.type === 'FRIEND_REQUEST' && Boolean(n.data?.requestId || n.data?.userId);
+          const unreadRow = isUnread(n);
           return (
             <div
               key={n.id}
               className={`glass-card flex gap-3 rounded-[22px] p-4 shadow-soft ${
-                !n.readAt && !n.isRead ? 'ring-1 ring-primary/25' : ''
+                unreadRow ? 'ring-1 ring-primary/25' : 'opacity-90'
               }`}
             >
               <div className="rounded-2xl bg-primary/10 p-2 text-primary">
                 <Icon size={18} />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-slate-900 dark:text-white">{n.title}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-semibold text-slate-900 dark:text-white">{n.title}</p>
+                  {unreadRow ? (
+                    <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                      Unread
+                    </span>
+                  ) : (
+                    <span className="shrink-0 text-[10px] text-slate-400">Read</span>
+                  )}
+                </div>
                 <p className="text-sm text-slate-500">{n.body}</p>
                 <p className="mt-1 text-[11px] text-slate-400">
                   {new Date(n.createdAt).toLocaleString()}
@@ -247,6 +327,17 @@ export function NotificationsPage() {
                     ) : null}
                   </div>
                 ) : null}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {unreadRow ? (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-primary"
+                      onClick={() => void markOneRead(n)}
+                    >
+                      <CheckCheck size={14} /> Mark read
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <button
                 type="button"
@@ -277,20 +368,58 @@ export function NotificationsPage() {
             Friends, messages, calls, events{unread ? ` · ${unread} unread` : ''}
           </p>
         </div>
-        {items.length ? (
-          <Button type="button" variant="secondary" className="!min-h-10 w-auto px-3 text-xs" onClick={() => void markAll()}>
-            Mark all read
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap justify-end gap-2">
+          {items.length ? (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                className="!min-h-10 w-auto px-3 text-xs"
+                onClick={() => void markAll()}
+              >
+                Mark all read
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="!min-h-10 w-auto px-3 text-xs text-error"
+                onClick={() => void deleteAll()}
+              >
+                Delete all
+              </Button>
+            </>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        {(['all', 'unread', 'read'] as Filter[]).map((f) => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => setFilter(f)}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold capitalize ${
+              filter === f
+                ? 'bg-primary text-white'
+                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+            }`}
+          >
+            {f}
+          </button>
+        ))}
       </div>
 
       {error ? <p className="text-sm text-error">{error}</p> : null}
 
       {loading ? (
         <div className="h-28 animate-pulse rounded-[24px] bg-slate-100 dark:bg-slate-800" />
-      ) : items.length === 0 ? (
+      ) : visible.length === 0 ? (
         <div className="glass-card rounded-[28px] p-8 text-center text-slate-400 shadow-soft">
-          You&apos;re all caught up
+          {filter === 'unread'
+            ? 'No unread notifications'
+            : filter === 'read'
+              ? 'No read notifications yet'
+              : "You're all caught up"}
         </div>
       ) : (
         <div className="space-y-5">
