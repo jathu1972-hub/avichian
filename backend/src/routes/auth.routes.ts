@@ -16,12 +16,6 @@ import {
   loginSuperAdmin,
   loginWithEmail,
   loginWithPassword,
-  registerComplete,
-  registerLookup,
-  registerSendOtp,
-  registerVerify,
-  registerVerifyMobile,
-  registerWithMaster,
   resetPassword,
   setupMfaWithLoginToken,
   verifyMfaLogin,
@@ -52,51 +46,6 @@ const otpLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'OTP limit reached. Try again later.' },
-});
-
-const registerVerifySchema = z.object({
-  regNo: z.string().min(1),
-  name: z.string().min(1),
-  mobile: z.string().min(10),
-  email: z.string().email(),
-  department: z.string().min(1),
-});
-
-const registerVerifyMobileSchema = z.object({
-  regNo: z.string().min(1),
-  mobile: z.string().min(10),
-});
-
-const registerSendOtpSchema = z.object({
-  regNo: z.string().min(1),
-  mobile: z.string().min(10),
-  name: z.string().min(1).optional(),
-  email: z.string().email().optional(),
-  department: z.string().min(1).optional(),
-});
-
-const registerLookupSchema = z.object({
-  regNo: z.string().min(1),
-});
-
-const registerWithMasterSchema = z
-  .object({
-    regNo: z.string().min(1),
-    name: z.string().min(1),
-    mobile: z.string().min(10),
-    password: z.string().min(8),
-    confirmPassword: z.string().min(8).optional(),
-  })
-  .refine((d) => !d.confirmPassword || d.password === d.confirmPassword, {
-    message: 'Passwords do not match',
-    path: ['confirmPassword'],
-  });
-
-const registerCompleteSchema = z.object({
-  regNo: z.string().min(1),
-  name: z.string().min(1),
-  mobile: z.string().min(10),
-  password: z.string().min(8),
 });
 
 const loginEmailPasswordSchema = z.object({
@@ -202,6 +151,10 @@ function sendLoginResult(req: Request, res: Response, result: LoginResult, remem
     res.json({ success: true, data: result });
     return;
   }
+  if (!('accessToken' in result)) {
+    res.status(500).json({ success: false, error: { message: 'Invalid login result' } });
+    return;
+  }
   res.cookie('refresh_token', result.refreshToken, getRefreshCookieOptions(rememberMe));
   const csrfToken = issueCsrfToken(req, res);
   res.json({
@@ -238,63 +191,24 @@ export const authRouter = Router();
 
 authRouter.use(authLimiter);
 
-authRouter.post('/register/lookup', validateBody(registerLookupSchema), async (req, res, next) => {
-  try {
-    const result = await registerLookup(req.body);
-    res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-});
+/** Student accounts are created only by Super Admin — no public self-registration. */
+function rejectStudentSelfRegister(_req: unknown, res: import('express').Response) {
+  res.status(403).json({
+    success: false,
+    error: {
+      message:
+        'Student accounts are created by the AVICHIAN Super Admin only. Self-registration is not available.',
+      code: 'SELF_REGISTER_DISABLED',
+    },
+  });
+}
 
-authRouter.post('/register/verify', validateBody(registerVerifySchema), async (req, res, next) => {
-  try {
-    const result = await registerVerify(req.body);
-    res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-});
-
-authRouter.post(
-  '/register/verify-mobile',
-  validateBody(registerVerifyMobileSchema),
-  async (req, res, next) => {
-    try {
-      const result = await registerVerifyMobile(req.body);
-      res.json({ success: true, data: result });
-    } catch (error) {
-      next(error);
-    }
-  },
-);
-
-authRouter.post('/register/otp', otpLimiter, validateBody(registerSendOtpSchema), async (req, res, next) => {
-  try {
-    const result = await registerSendOtp(req.body);
-    res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-});
-
-authRouter.post('/register', validateBody(registerWithMasterSchema), async (req, res, next) => {
-  try {
-    const session = await registerWithMaster(req.body, getRequestMeta(req));
-    sendAuthSession(req, res, session);
-  } catch (error) {
-    next(error);
-  }
-});
-
-authRouter.post('/register/complete', validateBody(registerCompleteSchema), async (req, res, next) => {
-  try {
-    const session = await registerComplete(req.body, getRequestMeta(req));
-    sendAuthSession(req, res, session);
-  } catch (error) {
-    next(error);
-  }
-});
+authRouter.post('/register/lookup', rejectStudentSelfRegister);
+authRouter.post('/register/verify', rejectStudentSelfRegister);
+authRouter.post('/register/verify-mobile', rejectStudentSelfRegister);
+authRouter.post('/register/otp', rejectStudentSelfRegister);
+authRouter.post('/register', rejectStudentSelfRegister);
+authRouter.post('/register/complete', rejectStudentSelfRegister);
 
 authRouter.post('/login', validateBody(loginPasswordSchema), async (req, res, next) => {
   try {
@@ -497,6 +411,53 @@ authRouter.post('/logout/all', authenticate, async (req: AuthRequest, res, next)
     next(error);
   }
 });
+
+/** Change password while logged in (first-time force change or voluntary). */
+authRouter.post(
+  '/password/change',
+  authenticate,
+  validateBody(
+    z.object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(8).max(128),
+      confirmPassword: z.string().min(8).max(128).optional(),
+    }).refine((d) => !d.confirmPassword || d.confirmPassword === d.newPassword, {
+      message: 'Passwords do not match',
+      path: ['confirmPassword'],
+    }),
+  ),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { changePassword } = await import('../services/settings.service.js');
+      const { getRefreshCookieOptions } = await import('../services/session.service.js');
+      const data = await changePassword(
+        req.user!.id,
+        req.body.currentPassword,
+        req.body.newPassword,
+        getRequestMeta(req),
+      );
+      // Fresh session after password change (old refresh tokens revoked)
+      if (data.refreshToken) {
+        res.cookie('refresh_token', data.refreshToken, getRefreshCookieOptions(false));
+      }
+      const csrfToken = issueCsrfToken(req, res);
+      res.json({
+        success: true,
+        data: {
+          message: data.message,
+          user: data.user,
+          forcePasswordChange: false,
+          isFirstLogin: false,
+          accessToken: data.accessToken,
+          expiresIn: data.expiresIn,
+          csrfToken,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 authRouter.post('/forgot-password', otpLimiter, validateBody(forgotPasswordSchema), async (req, res, next) => {
   try {

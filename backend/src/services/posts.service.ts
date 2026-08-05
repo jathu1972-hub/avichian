@@ -26,13 +26,19 @@ async function hiddenPostIds(userId: string) {
 
 export async function createPost(
   authorId: string,
-  data: { caption?: string; mediaUrl?: string; visibility?: PostVisibility },
+  data: {
+    caption?: string;
+    mediaUrl?: string;
+    mediaMimeType?: string | null;
+    visibility?: PostVisibility;
+  },
 ) {
   const post = await prisma.post.create({
     data: {
       authorId,
       caption: data.caption ? sanitizeText(data.caption, 2000) : null,
       mediaUrl: data.mediaUrl ?? null,
+      mediaMimeType: data.mediaMimeType ?? null,
       visibility: data.visibility ?? 'DEPARTMENT',
     },
     include: {
@@ -353,6 +359,7 @@ type PostWithRelations = {
   authorId: string;
   caption: string | null;
   mediaUrl: string | null;
+  mediaMimeType?: string | null;
   visibility: PostVisibility;
   createdAt: Date;
   archivedAt?: Date | null;
@@ -373,6 +380,7 @@ function mapPost(post: PostWithRelations, viewerId: string) {
     ownerId: post.authorId,
     caption: post.caption,
     mediaUrl: post.mediaUrl,
+    mediaMimeType: post.mediaMimeType ?? null,
     visibility: post.visibility,
     createdAt: post.createdAt.toISOString(),
     archived: Boolean(post.archivedAt),

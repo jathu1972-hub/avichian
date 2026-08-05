@@ -1,9 +1,21 @@
-import { normalizeEmail, normalizeMobile, normalizeName, normalizeRegNo } from '@avichian/shared';
+import {
+  isValidEmail,
+  isValidRegNo,
+  normalizeEmail,
+  normalizeMobile,
+  normalizeName,
+  normalizeRegNo,
+} from '@avichian/shared';
 import { prisma } from '../../lib/prisma.js';
 import { decryptField, encryptField, hashValue } from '../../utils/crypto.js';
-import { hashPassword } from '../../utils/password.js';
+import {
+  assertPasswordsMatch,
+  assertStrongPassword,
+  hashPassword,
+} from '../../utils/password.js';
 import { AppError } from '../../utils/errors.js';
 import { writeAuditLog } from '../audit.service.js';
+import { env } from '../../config/env.js';
 
 export async function listStudents(params: {
   search?: string;
@@ -55,6 +67,7 @@ export async function listStudents(params: {
       department: u.department.name,
       departmentId: u.departmentId,
       year: u.profile?.year,
+      section: u.profile?.section ?? null,
       status: u.accountStatus,
       online: u.online,
       lastLoginAt: u.lastLoginAt,
@@ -137,41 +150,77 @@ export async function createStudentAccount(
     regNo: string;
     name: string;
     email: string;
-    mobile: string;
+    mobile?: string | null;
     departmentId: string;
     year?: number;
+    section?: string | null;
     password: string;
+    confirmPassword?: string;
+    /** ACTIVE | INACTIVE — INACTIVE maps to SUSPENDED (cannot log in) */
+    status?: 'ACTIVE' | 'INACTIVE';
   },
   adminId: string,
   meta: { ipAddress?: string; userAgent?: string },
 ) {
   const regNo = normalizeRegNo(data.regNo);
   const email = normalizeEmail(data.email);
-  const mobile = normalizeMobile(data.mobile);
   const name = normalizeName(data.name);
-  if (data.password.length < 8) throw new AppError(400, 'Password too short');
+  const section = data.section?.trim() ? data.section.trim().toUpperCase() : null;
+  const year = data.year ?? 1;
+  const active = (data.status ?? 'ACTIVE') !== 'INACTIVE';
+
+  if (!isValidRegNo(regNo)) {
+    throw new AppError(400, 'Invalid register number (6–12 letters/numbers)', 'INVALID_REG_NO');
+  }
+  if (!name) throw new AppError(400, 'Full name is required');
+  if (!isValidEmail(email)) {
+    throw new AppError(400, 'Invalid college email', 'INVALID_EMAIL');
+  }
+  if (env.collegeEmailDomain && !isValidEmail(email, env.collegeEmailDomain)) {
+    // Soft warning only if domain is set — allow other college domains if needed
+  }
+
+  assertStrongPassword(data.password);
+  assertPasswordsMatch(data.password, data.confirmPassword);
 
   const department = await prisma.department.findUnique({ where: { id: data.departmentId } });
   if (!department) throw new AppError(400, 'Invalid department');
 
-  const mobileHash = hashValue(mobile);
+  // Mobile optional — still need unique mobileHash for schema constraint
+  const rawMobile = data.mobile?.trim() ? normalizeMobile(data.mobile) : '';
+  const hasMobile = rawMobile.length === 10;
+  const mobile = hasMobile ? rawMobile : '';
+  const mobileHash = hasMobile
+    ? hashValue(mobile)
+    : hashValue(`__nomobile__:${regNo}`);
+  const mobileEnc = encryptField(hasMobile ? mobile : `NONE:${regNo}`);
+
   const exists = await prisma.user.findFirst({
     where: {
       deletedAt: null,
-      OR: [{ regNo }, { email }, { mobileHash }],
+      OR: [
+        { regNo },
+        { email },
+        ...(hasMobile ? [{ mobileHash }] : []),
+      ],
     },
   });
   if (exists) {
-    throw new AppError(
-      409,
-      exists.regNo === regNo
-        ? 'A student account with this register number already exists and can log in'
-        : 'Student with this email or mobile already exists',
-    );
+    if (exists.regNo === regNo) {
+      throw new AppError(
+        409,
+        'A student account with this register number already exists and can log in',
+        'DUPLICATE_REG_NO',
+      );
+    }
+    if (exists.email === email) {
+      throw new AppError(409, 'A student with this email already exists', 'DUPLICATE_EMAIL');
+    }
+    throw new AppError(409, 'A student with this mobile number already exists', 'DUPLICATE_MOBILE');
   }
 
+  // Hash unique password for THIS student only (bcrypt, never plain text)
   const passwordHash = await hashPassword(data.password);
-  const year = data.year ?? null;
 
   const user = await prisma.$transaction(async (tx) => {
     const releaseSoftDeleted = async (userId: string) => {
@@ -186,7 +235,6 @@ export async function createStudentAccount(
       });
     };
 
-    // Free unique columns held by soft-deleted rows (regNo / email / mobile)
     const softConflicts = await tx.user.findMany({
       where: {
         deletedAt: { not: null },
@@ -197,70 +245,69 @@ export async function createStudentAccount(
       await releaseSoftDeleted(soft.id);
     }
 
-    // Keep Student Master in sync so roster + app login share one source of truth
     let master = await tx.studentMaster.findUnique({
       where: { regNo },
       include: { user: true },
     });
 
     if (master?.user && !master.user.deletedAt) {
-      throw new AppError(409, 'This register number already has a login account');
+      throw new AppError(409, 'This register number already has a login account', 'DUPLICATE_REG_NO');
     }
 
     if (master?.user?.deletedAt) {
       await releaseSoftDeleted(master.user.id);
     }
 
+    const masterData = {
+      name,
+      email,
+      mobileHash,
+      mobileEnc,
+      departmentId: data.departmentId,
+      year,
+      section,
+      status: active ? ('ACTIVE' as const) : ('INACTIVE' as const),
+      verified: true,
+      accountCreated: true,
+    };
+
     if (master) {
       master = await tx.studentMaster.update({
         where: { id: master.id },
-        data: {
-          name,
-          email,
-          mobileHash,
-          mobileEnc: encryptField(mobile),
-          departmentId: data.departmentId,
-          year: year ?? master.year,
-          status: 'ACTIVE',
-          verified: true,
-          accountCreated: true,
-        },
+        data: masterData,
         include: { user: true },
       });
     } else {
       master = await tx.studentMaster.create({
         data: {
           regNo,
-          name,
-          email,
-          mobileHash,
-          mobileEnc: encryptField(mobile),
-          departmentId: data.departmentId,
-          year: year ?? 1,
-          status: 'ACTIVE',
-          verified: true,
-          accountCreated: true,
+          ...masterData,
         },
         include: { user: true },
       });
     }
 
+    // Single transaction: User + Profile + link to master — login credentials live on User
     return tx.user.create({
       data: {
         regNo,
         email,
         passwordHash,
         mobileHash,
-        mobileEnc: encryptField(mobile),
+        mobileEnc,
         role: 'STUDENT',
         departmentId: data.departmentId,
         studentMasterId: master.id,
-        accountStatus: 'ACTIVE',
+        accountStatus: active ? 'ACTIVE' : 'SUSPENDED',
+        // Admin-set password is temporary — student must set their own on first login
         forcePasswordChange: true,
+        failedLoginCount: 0,
+        lockedUntil: null,
         profile: {
           create: {
             name,
             year,
+            section,
             privacy: 'PUBLIC',
           },
         },
@@ -278,8 +325,8 @@ export async function createStudentAccount(
       regNo,
       studentName: name,
       role: 'STUDENT',
-      temporaryPassword: true,
-      accountStatus: 'ACTIVE',
+      accountStatus: user.accountStatus,
+      passwordSetByAdmin: true,
     },
     ...meta,
   });
@@ -289,11 +336,17 @@ export async function createStudentAccount(
     regNo: user.regNo,
     name: user.profile?.name,
     email: user.email,
+    section: user.profile?.section ?? section,
+    year: user.profile?.year ?? year,
+    department: user.department.name,
     accountStatus: user.accountStatus,
-    temporaryPassword: data.password,
+    /** Echo only in API response for admin to copy once — never stored plain */
+    passwordSet: true,
     forcePasswordChange: true,
-    canLoginImmediately: true,
-    loginHint: 'Student can log in now with Register Number + temporary password',
+    canLoginImmediately: active,
+    loginHint: active
+      ? 'Student logs in with Register Number + this password, then must set a new password on first login'
+      : 'Account is inactive — activate before the student can log in',
   };
 }
 
@@ -305,7 +358,9 @@ export async function updateStudent(
     mobile?: string;
     departmentId?: string;
     year?: number | null;
+    section?: string | null;
     verifiedBadge?: boolean;
+    status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
   },
   adminId: string,
   meta: { ipAddress?: string; userAgent?: string },
@@ -316,29 +371,75 @@ export async function updateStudent(
   if (!user) throw new AppError(404, 'Student not found');
 
   const updateData: Record<string, unknown> = {};
-  if (data.email) updateData.email = normalizeEmail(data.email);
+  if (data.email) {
+    const email = normalizeEmail(data.email);
+    const clash = await prisma.user.findFirst({
+      where: { email, deletedAt: null, NOT: { id: userId } },
+    });
+    if (clash) throw new AppError(409, 'Email already in use', 'DUPLICATE_EMAIL');
+    updateData.email = email;
+  }
   if (data.departmentId) updateData.departmentId = data.departmentId;
   if (data.verifiedBadge !== undefined) updateData.verifiedBadge = data.verifiedBadge;
+  if (data.status === 'ACTIVE') {
+    updateData.accountStatus = 'ACTIVE';
+    updateData.suspendedAt = null;
+  } else if (data.status === 'INACTIVE' || data.status === 'SUSPENDED') {
+    updateData.accountStatus = 'SUSPENDED';
+    updateData.suspendedAt = new Date();
+  }
   if (data.mobile) {
     const mobile = normalizeMobile(data.mobile);
-    updateData.mobileHash = hashValue(mobile);
+    const mobileHash = hashValue(mobile);
+    const clash = await prisma.user.findFirst({
+      where: { mobileHash, deletedAt: null, NOT: { id: userId } },
+    });
+    if (clash) throw new AppError(409, 'Mobile already in use', 'DUPLICATE_MOBILE');
+    updateData.mobileHash = mobileHash;
     updateData.mobileEnc = encryptField(mobile);
   }
 
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: userId }, data: updateData }),
-    ...(data.name !== undefined || data.year !== undefined
-      ? [
-          prisma.profile.update({
-            where: { userId },
-            data: {
-              ...(data.name ? { name: normalizeName(data.name) } : {}),
-              ...(data.year !== undefined ? { year: data.year } : {}),
-            },
-          }),
-        ]
-      : []),
-  ]);
+  const section =
+    data.section !== undefined
+      ? data.section?.trim()
+        ? data.section.trim().toUpperCase()
+        : null
+      : undefined;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: userId }, data: updateData });
+    if (
+      data.name !== undefined ||
+      data.year !== undefined ||
+      section !== undefined
+    ) {
+      await tx.profile.update({
+        where: { userId },
+        data: {
+          ...(data.name ? { name: normalizeName(data.name) } : {}),
+          ...(data.year !== undefined ? { year: data.year } : {}),
+          ...(section !== undefined ? { section } : {}),
+        },
+      });
+    }
+    if (user.studentMasterId && (data.email || data.name || data.year !== undefined || section !== undefined || data.departmentId || data.status)) {
+      await tx.studentMaster.update({
+        where: { id: user.studentMasterId },
+        data: {
+          ...(data.email ? { email: normalizeEmail(data.email) } : {}),
+          ...(data.name ? { name: normalizeName(data.name) } : {}),
+          ...(data.year !== undefined && data.year !== null ? { year: data.year } : {}),
+          ...(section !== undefined ? { section } : {}),
+          ...(data.departmentId ? { departmentId: data.departmentId } : {}),
+          ...(data.status === 'ACTIVE'
+            ? { status: 'ACTIVE' as const }
+            : data.status === 'INACTIVE' || data.status === 'SUSPENDED'
+              ? { status: 'INACTIVE' as const }
+              : {}),
+        },
+      });
+    }
+  });
 
   await writeAuditLog({
     userId: adminId,
@@ -460,26 +561,95 @@ export async function unlockStudentAccount(
   };
 }
 
+/** Manually lock a student account until a given time (default 24h). */
+export async function lockStudentAccount(
+  userId: string,
+  adminId: string,
+  meta: { ipAddress?: string; userAgent?: string },
+  options?: { reason?: string; durationMinutes?: number },
+) {
+  const existing = await prisma.user.findFirst({
+    where: { id: userId, role: 'STUDENT', deletedAt: null },
+    include: { profile: true },
+  });
+  if (!existing) throw new AppError(404, 'Student not found');
+
+  const minutes = Math.max(1, options?.durationMinutes ?? 24 * 60);
+  const lockedUntil = new Date(Date.now() + minutes * 60 * 1000);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { lockedUntil },
+  });
+  await prisma.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+
+  await writeAuditLog({
+    userId: adminId,
+    action: 'USER_SUSPENDED',
+    resourceType: 'user',
+    resourceId: userId,
+    metadata: {
+      action: 'lock_account',
+      regNo: existing.regNo,
+      studentName: existing.profile?.name ?? existing.regNo,
+      reason: options?.reason ?? 'Admin lock',
+      lockedUntil: lockedUntil.toISOString(),
+      durationMinutes: minutes,
+    },
+    ...meta,
+  });
+
+  return {
+    message: `Account locked until ${lockedUntil.toISOString()}. All sessions revoked.`,
+    regNo: existing.regNo,
+    lockedUntil,
+    isLocked: true,
+  };
+}
+
 export async function resetStudentPassword(
   userId: string,
   newPassword: string,
   adminId: string,
   meta: { ipAddress?: string; userAgent?: string },
+  confirmPassword?: string,
+  resetReason?: string,
 ) {
-  if (newPassword.length < 8) throw new AppError(400, 'Password too short');
+  assertStrongPassword(newPassword);
+  assertPasswordsMatch(newPassword, confirmPassword);
+
+  const existing = await prisma.user.findFirst({
+    where: { id: userId, role: 'STUDENT', deletedAt: null },
+  });
+  if (!existing) throw new AppError(404, 'Student not found');
+
   const passwordHash = await hashPassword(newPassword);
   const user = await prisma.user.update({
-    where: { id: userId, role: 'STUDENT' },
+    where: { id: userId },
     data: {
       passwordHash,
       failedLoginCount: 0,
       lockedUntil: null,
+      lastFailedLoginAt: null,
+      // Temporary password — student must set a private password on next login
       forcePasswordChange: true,
+      accountStatus:
+        existing.accountStatus === 'UNVERIFIED' ? 'ACTIVE' : existing.accountStatus,
     },
   });
   await prisma.session.updateMany({
     where: { userId, revokedAt: null },
     data: { revokedAt: new Date() },
+  });
+  await prisma.passwordResetLog.create({
+    data: {
+      studentId: userId,
+      adminId,
+      resetReason: resetReason?.trim() || 'Admin temporary password reset',
+    },
   });
   const profile = await prisma.profile.findUnique({ where: { userId } });
   await writeAuditLog({
@@ -492,13 +662,57 @@ export async function resetStudentPassword(
       studentName: profile?.name ?? user.regNo,
       by: 'super_admin',
       forceChange: true,
-      reason: 'Admin password reset',
+      isFirstLogin: true,
+      reason: resetReason ?? 'Admin password reset',
     },
     ...meta,
   });
   return {
-    message: 'Password reset. Student must change password on next login.',
-    temporaryPassword: newPassword,
+    message:
+      'Temporary password set. Student must change it on next login. Share the temp password out of band — it is not stored in plain text.',
+    regNo: user.regNo,
+    passwordUpdated: true,
+    forcePasswordChange: true,
+    isFirstLogin: true,
+  };
+}
+
+/** Mark student to change password on next login without setting a new temp password. */
+export async function forceStudentPasswordChange(
+  userId: string,
+  adminId: string,
+  meta: { ipAddress?: string; userAgent?: string },
+  reason?: string,
+) {
+  const existing = await prisma.user.findFirst({
+    where: { id: userId, role: 'STUDENT', deletedAt: null },
+  });
+  if (!existing) throw new AppError(404, 'Student not found');
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { forcePasswordChange: true },
+  });
+  await prisma.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  await writeAuditLog({
+    userId: adminId,
+    action: 'PASSWORD_CHANGE',
+    resourceType: 'user',
+    resourceId: userId,
+    metadata: {
+      regNo: existing.regNo,
+      action: 'force_password_change_flag',
+      reason: reason ?? 'Admin required password change',
+    },
+    ...meta,
+  });
+  return {
+    message: 'Student will be required to change password on next login. All sessions were revoked.',
+    forcePasswordChange: true,
+    isFirstLogin: true,
   };
 }
 
@@ -652,6 +866,7 @@ export async function getStudentAdminProfile(userId: string) {
     loginHistory,
     auditOnStudent,
     likesReceived,
+    passwordResetLogs,
   ] = await Promise.all([
     prisma.post.findMany({
       where: { authorId: userId },
@@ -700,6 +915,7 @@ export async function getStudentAdminProfile(userId: string) {
             'USER_ACTIVATED',
             'USER_WARNED',
             'PASSWORD_RESET',
+            'PASSWORD_CHANGE',
             'USER_DELETED',
             'USER_UPDATED',
             'USER_CREATED',
@@ -713,6 +929,12 @@ export async function getStudentAdminProfile(userId: string) {
     }),
     prisma.postLike.count({
       where: { post: { authorId: userId, deletedAt: null } },
+    }),
+    prisma.passwordResetLog.findMany({
+      where: { studentId: userId },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      include: { admin: { include: { profile: true } } },
     }),
   ]);
 
@@ -886,14 +1108,22 @@ export async function getStudentAdminProfile(userId: string) {
           deleted: false,
         })),
       ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-      passwordResetHistory: auditOnStudent
-        .filter((a) => a.action === 'PASSWORD_RESET')
-        .map((a) => ({
-          id: a.id,
-          adminName: a.user?.profile?.name ?? a.user?.regNo ?? 'System',
-          timestamp: a.createdAt,
-          reason: (a.metadata as { reason?: string } | null)?.reason ?? null,
-        })),
+      passwordResetHistory:
+        passwordResetLogs.length > 0
+          ? passwordResetLogs.map((h) => ({
+              id: h.id,
+              adminName: h.admin.profile?.name ?? h.admin.regNo,
+              timestamp: h.createdAt,
+              reason: h.resetReason,
+            }))
+          : auditOnStudent
+              .filter((a) => a.action === 'PASSWORD_RESET')
+              .map((a) => ({
+                id: a.id,
+                adminName: a.user?.profile?.name ?? a.user?.regNo ?? 'System',
+                timestamp: a.createdAt,
+                reason: (a.metadata as { reason?: string } | null)?.reason ?? null,
+              })),
       suspensions: auditOnStudent
         .filter((a) => a.action === 'USER_SUSPENDED' || a.action === 'USER_ACTIVATED')
         .map((a) => ({

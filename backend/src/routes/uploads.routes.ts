@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { authenticate, type AuthRequest } from '../middleware/auth.js';
+import { authenticate, requirePasswordReady, type AuthRequest } from '../middleware/auth.js';
 import { requireRoles } from '../middleware/rbac.js';
 import { AppError } from '../utils/errors.js';
 import {
@@ -14,15 +14,16 @@ import {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 500 * 1024 * 1024,
-    files: 1,
-    fields: 10,
+    // Global ceiling — per-purpose limits enforced after multer (images 20MB, video 100MB)
+    fileSize: 100 * 1024 * 1024,
+    files: 2,
+    fields: 20,
   },
 });
 
 export const uploadsRouter = Router();
 
-uploadsRouter.use(authenticate, requireRoles('STUDENT', 'STAFF', 'SUPER_ADMIN'));
+uploadsRouter.use(authenticate, requirePasswordReady, requireRoles('STUDENT', 'STAFF', 'SUPER_ADMIN'));
 
 function multerSingle(req: AuthRequest, res: import('express').Response, next: import('express').NextFunction) {
   // Accept common field names used by clients
@@ -45,7 +46,7 @@ function multerSingle(req: AuthRequest, res: import('express').Response, next: i
         next(
           new AppError(
             413,
-            'File too large. Maximum upload size is 500MB for videos, 100MB for documents, 20MB for images.',
+            'File too large. Limits: images 20MB · videos/stories/reels 100MB · documents 100MB.',
             'FILE_TOO_LARGE',
           ),
         );
@@ -135,11 +136,21 @@ async function handleUpload(req: AuthRequest, res: import('express').Response, n
       userId: req.user!.id,
     });
 
+    console.info('[upload] success', {
+      id: result.id,
+      url: result.url,
+      mimeType: result.mimeType,
+      size: result.size,
+      storage: result.storage,
+      key: result.key,
+    });
+
     res.status(201).json({
       success: true,
       data: {
         id: result.id,
         url: result.url,
+        mediaUrl: result.url,
         storageUrl: result.url,
         key: result.key,
         mimeType: result.mimeType,
@@ -149,12 +160,17 @@ async function handleUpload(req: AuthRequest, res: import('express').Response, n
         fileName: result.fileName,
         purpose: result.purpose,
         storage: result.storage,
+        duration: result.duration ?? null,
         uploadedBy: req.user!.id,
         createdAt: result.createdAt.toISOString(),
       },
     });
   } catch (error) {
-    console.error('[upload] failed', error instanceof Error ? error.message : error);
+    console.error('[upload] failed', {
+      message: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
+      userId: req.user?.id,
+    });
     next(error);
   }
 }

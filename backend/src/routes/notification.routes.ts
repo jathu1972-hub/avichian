@@ -1,12 +1,17 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authenticate, type AuthRequest } from '../middleware/auth.js';
+import { authenticate, requirePasswordReady, type AuthRequest } from '../middleware/auth.js';
 import { requireRoles } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validate.js';
-import { listNotifications, markNotificationsRead } from '../services/notification.service.js';
+import {
+  deleteNotification,
+  listNotifications,
+  markNotificationsRead,
+} from '../services/notification.service.js';
+import { routeParam } from '../utils/route-param.js';
 
 export const notificationRouter = Router();
-notificationRouter.use(authenticate, requireRoles('STUDENT', 'STAFF'));
+notificationRouter.use(authenticate, requirePasswordReady, requireRoles('STUDENT', 'STAFF'));
 
 notificationRouter.get('/', async (req: AuthRequest, res, next) => {
   try {
@@ -29,3 +34,12 @@ notificationRouter.post(
     }
   },
 );
+
+notificationRouter.delete('/:id', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await deleteNotification(req.user!.id, routeParam(req.params.id));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});

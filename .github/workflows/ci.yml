@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, development]
   pull_request:
-    branches: [main, develop]
+    branches: [main, development]
 
 jobs:
   lint-and-test:
@@ -53,8 +53,18 @@ jobs:
       - name: Push database schema
         run: npm run db:push -w backend
 
-      - name: Lint
+      - name: Lint all workspaces
         run: npm run lint
 
-      - name: Test
+      - name: Test backend
         run: npm run test -w backend
+
+      - name: Build student app
+        run: npm run build -w @avichian/student-app
+        env:
+          VITE_API_URL: https://api.example.com
+
+      - name: Build super admin portal
+        run: npm run build -w @avichian/super-admin-portal
+        env:
+          VITE_API_URL: https://api.example.com

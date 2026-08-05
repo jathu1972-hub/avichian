@@ -12,8 +12,19 @@ export interface AuthRequest extends Request {
     regNo: string;
     role: UserRole;
     departmentId: string;
+    forcePasswordChange?: boolean;
   };
 }
+
+/** Paths allowed while forcePasswordChange is true (relative to mounted router). */
+const FORCE_PASSWORD_ALLOW = [
+  '/me',
+  '/security/password',
+  '/password',
+  '/password/change',
+  '/logout',
+  '/logout/all',
+];
 
 export async function authenticate(
   req: AuthRequest,
@@ -39,6 +50,7 @@ export async function authenticate(
         deletedAt: true,
         accountStatus: true,
         lockedUntil: true,
+        forcePasswordChange: true,
       },
     });
 
@@ -53,6 +65,7 @@ export async function authenticate(
       regNo: user.regNo,
       role: user.role as UserRole,
       departmentId: user.departmentId,
+      forcePasswordChange: user.forcePasswordChange,
     };
 
     next();
@@ -63,4 +76,34 @@ export async function authenticate(
     }
     next(new AppError(401, AUTH_ERRORS.UNAUTHORIZED));
   }
+}
+
+/**
+ * Block API access until the user completes a required password change
+ * (first login after admin-created or admin-reset credentials).
+ */
+export function requirePasswordReady(
+  req: AuthRequest,
+  _res: Response,
+  next: NextFunction,
+): void {
+  if (!req.user?.forcePasswordChange) {
+    next();
+    return;
+  }
+  const path = req.path || '';
+  const allowed = FORCE_PASSWORD_ALLOW.some(
+    (p) => path === p || path.endsWith(p) || path.includes(p),
+  );
+  if (allowed) {
+    next();
+    return;
+  }
+  next(
+    new AppError(
+      403,
+      'You must set a new password before continuing',
+      'FORCE_PASSWORD_CHANGE',
+    ),
+  );
 }

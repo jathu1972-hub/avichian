@@ -34,15 +34,61 @@ const lockoutEnabled =
     ? lockoutEnabledEnv === 'true' || lockoutEnabledEnv === '1'
     : isProduction;
 
-const frontendUrls = (
-  process.env.FRONTEND_URLS ??
-  process.env.CORS_ORIGIN ??
-  process.env.FRONTEND_URL ??
-  'http://localhost:5173,http://localhost:5174'
-)
-  .split(',')
-  .map((url) => url.trim())
-  .filter(Boolean);
+/**
+ * CORS allowlist for SPAs.
+ * Accepts (any combination):
+ * - FRONTEND_URLS=https://app...,https://admin...
+ * - CORS_ORIGIN=...
+ * - FRONTEND_URL / APP_URL / STUDENT_PORTAL_URL (student)
+ * - ADMIN_URL / SUPER_ADMIN_PORTAL_URL (super admin)
+ */
+function collectFrontendUrls(): string[] {
+  const chunks: string[] = [];
+  const multi =
+    process.env.FRONTEND_URLS ?? process.env.CORS_ORIGIN ?? process.env.ALLOWED_ORIGINS;
+  if (multi) chunks.push(...multi.split(','));
+
+  for (const key of [
+    'FRONTEND_URL',
+    'APP_URL',
+    'STUDENT_PORTAL_URL',
+    'ADMIN_URL',
+    'SUPER_ADMIN_PORTAL_URL',
+  ] as const) {
+    const v = process.env[key];
+    if (v?.trim()) chunks.push(v.trim());
+  }
+
+  if (chunks.length === 0) {
+    chunks.push('http://localhost:5173', 'http://localhost:5174');
+  }
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of chunks) {
+    const url = raw.trim().replace(/\/+$/, '');
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+  }
+  return out;
+}
+
+const frontendUrls = collectFrontendUrls();
+
+/** True when SPAs are not same-origin as API (GitHub Pages / Netlify → API host). */
+const crossSiteCookies =
+  isProduction ||
+  frontendUrls.some((u) => {
+    try {
+      const host = new URL(u).hostname;
+      return host !== 'localhost' && host !== '127.0.0.1';
+    } catch {
+      return false;
+    }
+  }) ||
+  process.env.CROSS_SITE_COOKIES === 'true' ||
+  process.env.CROSS_SITE_COOKIES === '1';
 
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
@@ -50,6 +96,8 @@ export const env = {
   port: Number(process.env.PORT ?? 4000),
   isProduction,
   isDevelopment,
+  /** SameSite=None; Secure cookies for SPA on another origin */
+  crossSiteCookies,
   /** When false (default in development), failed logins never lock accounts. */
   lockoutEnabled,
   databaseUrl: requireEnv('DATABASE_URL'),
@@ -60,8 +108,15 @@ export const env = {
   encryptionKey: requireEnv('ENCRYPTION_KEY'),
   /** Browser origins allowed by CORS (Netlify + custom domains). Alias: CORS_ORIGIN */
   frontendUrls,
-  appUrl: process.env.APP_URL ?? process.env.STUDENT_PORTAL_URL ?? 'http://localhost:5173',
-  superAdminPortalUrl: process.env.SUPER_ADMIN_PORTAL_URL ?? 'http://localhost:5174',
+  appUrl:
+    process.env.APP_URL ??
+    process.env.FRONTEND_URL ??
+    process.env.STUDENT_PORTAL_URL ??
+    'http://localhost:5173',
+  superAdminPortalUrl:
+    process.env.SUPER_ADMIN_PORTAL_URL ??
+    process.env.ADMIN_URL ??
+    'http://localhost:5174',
   collegeEmailDomain: process.env.COLLEGE_EMAIL_DOMAIN ?? 'avichi.edu',
   studentMasterSeedPath:
     process.env.STUDENT_MASTER_SEED_PATH ?? './seed-data/student_master.json',
@@ -95,6 +150,21 @@ export const env = {
   r2PublicUrl: process.env.R2_PUBLIC_URL || undefined,
   /** Full R2 S3 API endpoint, e.g. https://<accountid>.r2.cloudflarestorage.com */
   r2Endpoint: process.env.R2_ENDPOINT || undefined,
+  /**
+   * WebRTC ICE / LiveKit / Coturn (production calls)
+   * STUN_URLS: comma-separated, default Google STUN
+   * TURN_URLS + TURN_USERNAME + TURN_CREDENTIAL: Coturn (or Twilio, etc.)
+   * LIVEKIT_URL + LIVEKIT_API_KEY + LIVEKIT_API_SECRET: optional SFU path
+   */
+  stunUrls:
+    process.env.STUN_URLS ??
+    'stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302',
+  turnUrls: process.env.TURN_URLS || process.env.COTURN_URL || undefined,
+  turnUsername: process.env.TURN_USERNAME || process.env.COTURN_USERNAME || undefined,
+  turnCredential: process.env.TURN_CREDENTIAL || process.env.COTURN_PASSWORD || undefined,
+  livekitUrl: process.env.LIVEKIT_URL || undefined,
+  livekitApiKey: process.env.LIVEKIT_API_KEY || undefined,
+  livekitApiSecret: process.env.LIVEKIT_API_SECRET || undefined,
 };
 
 /** Soft production guardrails (log only — do not crash after secrets already loaded). */
@@ -105,7 +175,15 @@ export function logProductionWarnings(): void {
     warnings.push('FRONTEND_URLS/CORS_ORIGIN still includes localhost — Netlify origins will be blocked if missing.');
   }
   if (!env.publicApiUrl.startsWith('https://') && !env.publicApiUrl.includes('localhost')) {
-    warnings.push('PUBLIC_API_URL should be https://api.avichian.in in production.');
+    warnings.push('PUBLIC_API_URL should be https://api.avichian.com (or your API host) in production.');
+  }
+  if (
+    !frontendUrls.some((u) => u.includes('app.avichian') || u.includes('netlify.app')) &&
+    frontendUrls.every((u) => u.includes('localhost'))
+  ) {
+    warnings.push(
+      'FRONTEND_URLS / FRONTEND_URL / ADMIN_URL look like localhost only — Netlify SPAs will be blocked by CORS.',
+    );
   }
   const r2Partial =
     env.r2AccessKeyId || env.r2SecretAccessKey || env.r2BucketName || env.r2AccountId;
@@ -114,6 +192,14 @@ export function logProductionWarnings(): void {
   }
   if (env.jwtAccessSecret.length < 32 || env.jwtRefreshSecret.length < 32) {
     warnings.push('JWT secrets should be at least 32 characters.');
+  }
+  if (!env.turnUrls) {
+    warnings.push(
+      'TURN_URLS not set — voice/video may fail across NATs. Configure Coturn for production calls.',
+    );
+  }
+  if (env.livekitUrl && (!env.livekitApiKey || !env.livekitApiSecret)) {
+    warnings.push('LIVEKIT_URL set but LIVEKIT_API_KEY / LIVEKIT_API_SECRET missing.');
   }
   for (const w of warnings) {
     console.warn(`[production] ${w}`);

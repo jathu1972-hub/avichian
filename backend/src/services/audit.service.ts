@@ -1,4 +1,4 @@
-import type { AuditAction } from '@prisma/client';
+import type { AuditAction, Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 
 interface AuditParams {
@@ -6,7 +6,7 @@ interface AuditParams {
   action: AuditAction;
   resourceType?: string;
   resourceId?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Prisma.InputJsonValue;
   ipAddress?: string;
   userAgent?: string;
 }

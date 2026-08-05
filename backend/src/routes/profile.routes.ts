@@ -3,9 +3,10 @@ import multer from 'multer';
 import { z } from 'zod';
 import { sanitizeText } from '@avichian/shared';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, type AuthRequest } from '../middleware/auth.js';
+import { authenticate, requirePasswordReady, type AuthRequest } from '../middleware/auth.js';
 import { requireRoles } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validate.js';
+import { FriendRequestStatus } from '@prisma/client';
 import { areFriends } from '../services/friends.service.js';
 import { toPublicUser } from '../services/user.mapper.js';
 import { AppError } from '../utils/errors.js';
@@ -31,6 +32,14 @@ const photoUpload = multer({
 export const profileRouter = Router();
 
 profileRouter.use(authenticate);
+profileRouter.use((req, res, next) => {
+  // Allow profile read during forced password change
+  if (req.path === '/me' && req.method === 'GET') {
+    next();
+    return;
+  }
+  requirePasswordReady(req, res, next);
+});
 
 profileRouter.get('/me', async (req: AuthRequest, res, next) => {
   try {
@@ -209,6 +218,31 @@ profileRouter.get(
       const isFriend = isSelf ? false : await areFriends(req.user!.id, user.id);
       const sameDepartment = user.departmentId === req.user!.departmentId;
 
+      let friendshipStatus: 'none' | 'friends' | 'pending_outgoing' | 'pending_incoming' =
+        'none';
+      let pendingRequestId: string | null = null;
+      if (isSelf) {
+        friendshipStatus = 'none';
+      } else if (isFriend) {
+        friendshipStatus = 'friends';
+      } else {
+        const pending = await prisma.friendRequest.findFirst({
+          where: {
+            status: FriendRequestStatus.PENDING,
+            OR: [
+              { senderId: req.user!.id, receiverId: user.id },
+              { senderId: user.id, receiverId: req.user!.id },
+            ],
+          },
+          select: { id: true, senderId: true },
+        });
+        if (pending) {
+          pendingRequestId = pending.id;
+          friendshipStatus =
+            pending.senderId === req.user!.id ? 'pending_outgoing' : 'pending_incoming';
+        }
+      }
+
       const [postCount, friendCount] = await Promise.all([
         prisma.post.count({
           where: { authorId: user.id, deletedAt: null },
@@ -227,6 +261,8 @@ profileRouter.get(
           ...toPublicUser(user),
           isSelf,
           isFriend,
+          friendshipStatus,
+          pendingRequestId,
           sameDepartment,
           postCount,
           friendCount,

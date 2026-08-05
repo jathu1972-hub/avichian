@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
-import { authenticate, type AuthRequest } from '../middleware/auth.js';
+import { authenticate, requirePasswordReady, type AuthRequest } from '../middleware/auth.js';
 import { requireRoles } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validate.js';
 import { getRequestMeta } from '../middleware/request-meta.js';
@@ -17,7 +17,7 @@ import { createReport } from '../services/super-admin/moderation.service.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
 export const campusRouter = Router();
-campusRouter.use(authenticate, requireRoles('STUDENT', 'STAFF'));
+campusRouter.use(authenticate, requirePasswordReady, requireRoles('STUDENT', 'STAFF'));
 
 campusRouter.post(
   '/reports',

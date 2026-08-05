@@ -17,13 +17,14 @@ export type UploadPurpose =
   | 'story_video'
   | 'document';
 
+/** Production limits: images 20MB · videos (posts/stories/reels) 100MB */
 const LIMITS: Record<UploadPurpose, number> = {
   profile: 10 * 1024 * 1024,
   cover: 10 * 1024 * 1024,
   post_image: 20 * 1024 * 1024,
   story_image: 20 * 1024 * 1024,
-  post_video: 500 * 1024 * 1024,
-  story_video: 500 * 1024 * 1024,
+  post_video: 100 * 1024 * 1024,
+  story_video: 100 * 1024 * 1024,
   document: 100 * 1024 * 1024,
 };
 
@@ -140,11 +141,41 @@ export function isVideoPurpose(purpose: UploadPurpose): boolean {
 export function normalizeMimeType(mimeType: string | undefined, originalName?: string): string {
   let mime = (mimeType || '').toLowerCase().trim();
   if (mime === 'image/jpg') mime = 'image/jpeg';
-  if (mime && mime !== 'application/octet-stream') return mime;
+  if (mime === 'video/x-m4v') mime = 'video/mp4';
 
   const ext = originalName ? extname(originalName).toLowerCase() : '';
+  // File extension wins for common video containers (phones often send wrong MIME)
+  if (ext === '.mp4' || ext === '.m4v') return 'video/mp4';
+  if (ext === '.webm') return 'video/webm';
+  if (ext === '.mov') return 'video/quicktime';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+
+  if (mime && mime !== 'application/octet-stream') return mime;
   if (ext && MIME_BY_EXT[ext]) return MIME_BY_EXT[ext];
   return mime || 'application/octet-stream';
+}
+
+/**
+ * Detect browser-hostile video codecs (HEVC/H.265 only → black video + audio in Chrome).
+ * Returns an error message or null if OK.
+ */
+export function detectUnplayableVideoCodec(buffer: Buffer): string | null {
+  // Sample ftyp + early boxes (first 256KB is enough for most MP4s)
+  const n = Math.min(buffer.length, 256 * 1024);
+  const sample = buffer.subarray(0, n).toString('latin1');
+  const hasHevc = /hvc1|hev1|dvh1|dvhe/.test(sample);
+  const hasAvc = /avc1|avc3|avcC/.test(sample);
+  const hasVp9 = /vp09|vp9/.test(sample);
+  const hasAv1 = /av01/.test(sample);
+  if (hasHevc && !hasAvc && !hasVp9 && !hasAv1) {
+    return (
+      'This video uses HEVC/H.265, which most browsers cannot display (black screen with sound). ' +
+      'Please re-export as MP4 with H.264 video + AAC audio, or WebM (VP8/VP9).'
+    );
+  }
+  return null;
 }
 
 export function resolveUploadPurpose(
@@ -165,6 +196,7 @@ export function validateUploadFile(params: {
   mimeType: string;
   size: number;
   originalName?: string;
+  buffer?: Buffer;
 }): { mimeType: string; extension: string } {
   const mime = normalizeMimeType(params.mimeType, params.originalName);
   const allowed = PURPOSE_MIMES[params.purpose];
@@ -191,8 +223,19 @@ export function validateUploadFile(params: {
     throw new AppError(400, 'Empty file is not allowed', 'EMPTY_FILE');
   }
 
+  if (params.buffer && mime.startsWith('video/')) {
+    const codecError = detectUnplayableVideoCodec(params.buffer);
+    if (codecError) {
+      throw new AppError(400, codecError, 'UNSUPPORTED_CODEC');
+    }
+  }
+
   const fromName = params.originalName ? extname(params.originalName).toLowerCase() : '';
-  const extension = EXT_BY_MIME[mime] ?? (fromName || '.bin');
+  // Prefer .mp4 extension for video/mp4 so Content-Type sniffing is reliable
+  let extension = EXT_BY_MIME[mime] ?? (fromName || '.bin');
+  if (mime === 'video/mp4' && (fromName === '.mp4' || fromName === '.m4v' || !fromName)) {
+    extension = '.mp4';
+  }
 
   return { mimeType: mime, extension };
 }
@@ -220,7 +263,8 @@ async function storeR2(key: string, buffer: Buffer, mimeType: string): Promise<s
       Bucket: env.r2BucketName!,
       Key: key,
       Body: buffer,
-      ContentType: mimeType,
+      ContentType: mimeType || 'application/octet-stream',
+      ContentDisposition: 'inline',
     }),
   );
   const base = env.r2PublicUrl!.replace(/\/$/, '');
@@ -236,12 +280,15 @@ export async function storeUpload(params: {
 }): Promise<{
   id: string;
   url: string;
+  mediaUrl: string;
   key: string;
   mimeType: string;
   size: number;
+  fileSize: number;
   fileName: string;
   purpose: UploadPurpose;
   storage: 'r2' | 'local';
+  duration: number | null;
   createdAt: Date;
 }> {
   const { mimeType, extension } = validateUploadFile({
@@ -249,6 +296,7 @@ export async function storeUpload(params: {
     mimeType: params.mimeType,
     size: params.buffer.length,
     originalName: params.originalName,
+    buffer: params.buffer,
   });
 
   const folder = params.purpose.split('_').join('-');
@@ -308,12 +356,15 @@ export async function storeUpload(params: {
   return {
     id: asset.id,
     url,
+    mediaUrl: url,
     key,
     mimeType,
     size: params.buffer.length,
+    fileSize: params.buffer.length,
     fileName,
     purpose: params.purpose,
     storage,
+    duration: null as number | null,
     createdAt: asset.createdAt,
   };
 }
@@ -329,6 +380,12 @@ function storageErrorMessage(err: unknown): string {
 export function getLocalUploadRoot(): string {
   if (!existsSync(LOCAL_UPLOAD_ROOT)) {
     mkdirSync(LOCAL_UPLOAD_ROOT, { recursive: true });
+    console.info('[upload] created local storage directory', LOCAL_UPLOAD_ROOT);
   }
   return LOCAL_UPLOAD_ROOT;
+}
+
+/** Call once at process start so first upload never fails on missing folder */
+export function ensureUploadStorageReady(): void {
+  getLocalUploadRoot();
 }

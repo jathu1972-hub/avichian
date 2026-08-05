@@ -21,7 +21,11 @@ import { notificationRouter } from './routes/notification.routes.js';
 import { campusRouter } from './routes/campus.routes.js';
 import { uploadsRouter } from './routes/uploads.routes.js';
 import { reelsRouter } from './routes/reels.routes.js';
-import { getLocalUploadRoot } from './services/storage.service.js';
+import { eventsRouter } from './routes/events.routes.js';
+import { communitiesRouter } from './routes/communities.routes.js';
+import { settingsRouter } from './routes/settings.routes.js';
+import { safetyRouter } from './routes/safety.routes.js';
+import { serveLocalMedia } from './middleware/media-static.js';
 
 /** Allow LAN phone/tablet access in development (Vite --host). */
 function isDevNetworkOrigin(origin: string): boolean {
@@ -61,15 +65,25 @@ export function createApp() {
   app.use(
     cors({
       origin(origin, callback) {
+        // Never throw — throwing breaks preflight and surfaces as browser "Failed to fetch"
         if (!origin || env.frontendUrls.includes(origin) || isDevNetworkOrigin(origin)) {
           callback(null, true);
           return;
         }
-        callback(new Error(`Origin ${origin} is not allowed by CORS`));
+        console.warn('[CORS] blocked origin:', origin, '| allowed:', env.frontendUrls.join(', '));
+        callback(null, false);
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-CSRF-Token',
+        'X-Requested-With',
+        'Accept',
+      ],
+      exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'],
+      maxAge: 86400,
     }),
   );
 
@@ -78,8 +92,32 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true, limit: '100mb' }));
   app.use(cookieParser());
 
-  app.get('/api/health', (_req, res) => {
-    res.json({ success: true, data: { status: 'ok', service: 'avichian-api' } });
+  app.get('/api/health', async (_req, res) => {
+    let database: 'connected' | 'disconnected' = 'disconnected';
+    try {
+      const { prisma } = await import('./lib/prisma.js');
+      await prisma.$queryRaw`SELECT 1`;
+      database = 'connected';
+    } catch (err) {
+      console.error('[health] database check failed', err);
+    }
+    const ok = database === 'connected';
+    const time = new Date().toISOString();
+    // Keep both shapes: nested `data` (app convention) + flat fields for probes
+    res.status(ok ? 200 : 503).json({
+      success: ok,
+      status: ok ? 'ok' : 'degraded',
+      database,
+      server: 'running',
+      time,
+      data: {
+        status: ok ? 'ok' : 'degraded',
+        database,
+        server: 'running',
+        service: 'avichian-api',
+        time,
+      },
+    });
   });
 
   app.get('/api/csrf-token', (req, res) => {
@@ -87,34 +125,10 @@ export function createApp() {
     res.json({ success: true, data: { csrfToken: token } });
   });
 
-  // Local object storage fallback (when R2 is not configured)
-  app.use(
-    '/api/media',
-    express.static(getLocalUploadRoot(), {
-      fallthrough: false,
-      maxAge: env.isProduction ? '7d' : 0,
-      setHeaders(res, filePath) {
-        res.setHeader('X-Content-Type-Options', 'nosniff');
-        res.setHeader('Accept-Ranges', 'bytes');
-        const lower = filePath.toLowerCase();
-        if (lower.endsWith('.mp4') || lower.endsWith('.m4v')) {
-          res.setHeader('Content-Type', 'video/mp4');
-        } else if (lower.endsWith('.webm')) {
-          res.setHeader('Content-Type', 'video/webm');
-        } else if (lower.endsWith('.mov')) {
-          res.setHeader('Content-Type', 'video/quicktime');
-        } else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-          res.setHeader('Content-Type', 'image/jpeg');
-        } else if (lower.endsWith('.png')) {
-          res.setHeader('Content-Type', 'image/png');
-        } else if (lower.endsWith('.webp')) {
-          res.setHeader('Content-Type', 'image/webp');
-        }
-        // Allow media to play in <video>/<img> from the SPA origin
-        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-      },
-    }),
-  );
+  // Local media: correct Content-Type + HTTP Range (206) for seeking / progressive play
+  app.use('/api/media', (req, res, next) => {
+    void serveLocalMedia(req, res, next);
+  });
 
   app.use('/api/auth', csrfProtection, authRouter);
   app.use('/api/admin', csrfProtection, adminRouter);
@@ -129,10 +143,24 @@ export function createApp() {
   app.use('/api/friends', csrfProtection, friendsRouter);
   app.use('/api/search', csrfProtection, searchRouter);
   app.use('/api/student', csrfProtection, studentRouter);
+  app.use('/api/events', csrfProtection, eventsRouter);
+  app.use('/api/communities', csrfProtection, communitiesRouter);
+  app.use('/api/settings', csrfProtection, settingsRouter);
+  app.use('/api/safety', csrfProtection, safetyRouter);
   app.use('/api/campus', csrfProtection, campusRouter);
   app.use('/api/chat', csrfProtection, chatRouter);
+  app.use('/api/chats', csrfProtection, chatRouter); // alias
   app.use('/api/calls', csrfProtection, callRouter);
   app.use('/api/notifications', csrfProtection, notificationRouter);
+
+  // Always JSON for unknown /api routes — never fall through to a host HTML page from this app
+  app.use('/api', (req, res) => {
+    res.status(404).json({
+      success: false,
+      error: `API route not found: ${req.method} ${req.originalUrl}`,
+      code: 'NOT_FOUND',
+    });
+  });
 
   app.use(errorHandler);
 

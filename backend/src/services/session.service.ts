@@ -162,8 +162,8 @@ export async function revokeAllSessions(userId: string): Promise<number> {
 
 export function getRefreshCookieOptions(rememberMe = false) {
   const days = rememberMe ? REMEMBER_ME_DAYS : (env.refreshTokenExpiryDays || DEFAULT_REFRESH_DAYS);
-  // Production: Netlify frontends call api.avichian.in cross-site → SameSite=None; Secure
-  const crossSite = env.isProduction;
+  // Cross-origin SPA (GitHub Pages / Netlify) → API: SameSite=None; Secure
+  const crossSite = env.crossSiteCookies;
   return {
     httpOnly: true,
     secure: crossSite || env.isProduction,

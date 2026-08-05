@@ -15,7 +15,7 @@ import { env } from '../config/env.js';
 import { prisma } from '../lib/prisma.js';
 import { encryptField, hashValue } from '../utils/crypto.js';
 import { AppError } from '../utils/errors.js';
-import { hashPassword, verifyPassword } from '../utils/password.js';
+import { hashPassword, isLegacyPasswordHash, verifyPassword } from '../utils/password.js';
 import { signMfaPendingToken } from '../utils/jwt.js';
 import { sendOtp, verifyOtp } from './otp.service.js';
 import { createSession } from './session.service.js';
@@ -412,24 +412,26 @@ export async function loginWithPassword(
   if (!identifier) {
     throw new AppError(400, 'Register number or email is required');
   }
+  if (!params.password) {
+    throw new AppError(400, 'Password is required');
+  }
 
   const looksLikeEmail = identifier.includes('@');
   const regNo = looksLikeEmail ? '' : normalizeRegNo(identifier);
   const email = looksLikeEmail ? normalizeEmail(identifier) : '';
 
-  // Always authenticate against the Users table (PostgreSQL via Prisma) — never mock data.
+  // Authenticate only against PostgreSQL users table — never mock / JSON.
   const user = looksLikeEmail
     ? await prisma.user.findFirst({
         where: { email, deletedAt: null },
-        include: { profile: true, department: true },
+        include: { profile: true, department: true, admin: true },
       })
     : await prisma.user.findFirst({
         where: { regNo, deletedAt: null },
-        include: { profile: true, department: true },
+        include: { profile: true, department: true, admin: true },
       });
 
   if (!user) {
-    // Soft-deleted account
     const deleted = looksLikeEmail
       ? await prisma.user.findFirst({ where: { email, deletedAt: { not: null } } })
       : await prisma.user.findFirst({ where: { regNo, deletedAt: { not: null } } });
@@ -463,6 +465,15 @@ export async function loginWithPassword(
     throw new AppError(401, AUTH_ERRORS.STUDENT_NOT_FOUND);
   }
 
+  // Super Admins must use the Super Admin portal login (employee ID + email + password).
+  if (user.role === 'SUPER_ADMIN' || user.admin) {
+    throw new AppError(
+      403,
+      'Super Admin accounts must sign in on the Super Admin portal, not the student app',
+      'USE_ADMIN_PORTAL',
+    );
+  }
+
   const account = await prepareAccountForLogin(user);
 
   try {
@@ -484,11 +495,19 @@ export async function loginWithPassword(
     await handleFailedLogin(user.id, user.regNo, meta);
   }
 
-  // Successful auth always clears failed attempt counters
   await clearLoginFailures(user.id);
 
-  // AVICHIAN app users (students + staff) get sessions without MFA.
-  // Super Admin MFA is enforced on the super-admin login endpoint.
+  // Transparent upgrade: bcrypt → Argon2id after successful login
+  if (isLegacyPasswordHash(user.passwordHash)) {
+    const upgraded = await hashPassword(params.password);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: upgraded },
+    });
+    user.passwordHash = upgraded;
+  }
+
+  // Students + staff: issue JWT session immediately (same User row created by Super Admin).
   if (user.role === 'STUDENT' || user.role === 'STAFF') {
     await recordLoginAttempt({
       userId: user.id,
@@ -500,7 +519,12 @@ export async function loginWithPassword(
     await writeAuditLog({
       userId: user.id,
       action: 'LOGIN_SUCCESS',
-      metadata: { method: 'password', role: user.role, identifier: looksLikeEmail ? 'email' : 'regNo' },
+      metadata: {
+        method: 'password',
+        role: user.role,
+        identifier: looksLikeEmail ? 'email' : 'regNo',
+        isFirstLogin: user.forcePasswordChange,
+      },
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     });
@@ -902,10 +926,19 @@ export async function loginSuperAdmin(
   const adminId = normalizeRegNo(params.adminId);
   const email = normalizeEmail(params.email);
 
-  const user = await prisma.user.findUnique({
-    where: { regNo: adminId },
+  let user = await prisma.user.findFirst({
+    where: { regNo: adminId, deletedAt: null },
     include: { profile: true, department: true, admin: true },
   });
+
+  // Legacy repair: Admin row present but role stuck as STUDENT
+  if (user?.admin && user.role !== 'SUPER_ADMIN') {
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: { role: 'SUPER_ADMIN' },
+      include: { profile: true, department: true, admin: true },
+    });
+  }
 
   if (!user || user.role !== 'SUPER_ADMIN' || !user.admin || user.email !== email) {
     await recordLoginAttempt({
@@ -1035,72 +1068,27 @@ export async function enableMfaWithLoginToken(
   return createSession(user, { ...meta, rememberMe: params.rememberMe });
 }
 
-export async function forgotPassword(params: { regNo: string }) {
-  const regNo = normalizeRegNo(params.regNo);
-  const user = await prisma.user.findUnique({ where: { regNo, deletedAt: null } });
-
-  if (!user) {
-    return { message: 'If the account exists, an OTP has been sent' };
-  }
-
-  const mobile = decryptField(user.mobileEnc);
-
-  await sendOtp({
-    purpose: 'PASSWORD_RESET',
-    channel: 'SMS',
-    regNo,
-    mobile,
-    userId: user.id,
-  });
-
-  return { message: 'If the account exists, an OTP has been sent' };
+/**
+ * Students cannot self-reset passwords. Only Super Admin issues temporary passwords.
+ * Endpoint kept for API compatibility — always returns the contact-admin message.
+ */
+export async function forgotPassword(_params: { regNo: string }) {
+  return {
+    message: 'Please contact the AVICHIAN Super Admin to reset your password.',
+    selfResetAllowed: false,
+  };
 }
 
+/** Disabled: college-managed accounts only. Super Admin resets via portal. */
 export async function resetPassword(
-  params: { regNo: string; otp: string; password: string },
-  meta: RequestMeta,
+  _params: { regNo: string; otp: string; password: string },
+  _meta: RequestMeta,
 ) {
-  const regNo = normalizeRegNo(params.regNo);
-
-  if (!isValidPassword(params.password)) {
-    throw new AppError(400, 'Password does not meet security requirements');
-  }
-
-  const user = await prisma.user.findUnique({ where: { regNo, deletedAt: null } });
-  if (!user) {
-    throw new AppError(404, AUTH_ERRORS.STUDENT_NOT_FOUND);
-  }
-
-  await verifyOtp({
-    purpose: 'PASSWORD_RESET',
-    code: params.otp,
-    regNo,
-    userId: user.id,
-  });
-
-  const passwordHash = await hashPassword(params.password);
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      passwordHash,
-      failedLoginCount: 0,
-      lockedUntil: null,
-    },
-  });
-
-  await prisma.session.updateMany({
-    where: { userId: user.id, revokedAt: null },
-    data: { revokedAt: new Date() },
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: 'PASSWORD_RESET',
-    ipAddress: meta.ipAddress,
-    userAgent: meta.userAgent,
-  });
-
-  return { message: 'Password reset successful' };
+  throw new AppError(
+    403,
+    'Please contact the AVICHIAN Super Admin to reset your password. Self-service password reset is not available.',
+    'SELF_RESET_DISABLED',
+  );
 }
 
 export async function setupMfa(userId: string) {

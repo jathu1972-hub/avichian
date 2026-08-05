@@ -12,6 +12,7 @@ import { encryptField, hashValue } from '../src/utils/crypto.js';
 import { normalizeEmail, normalizeRegNo } from '@avichian/shared';
 
 config({ path: resolve(process.cwd(), '../.env') });
+config({ path: resolve(process.cwd(), '.env') });
 
 async function main() {
   const regNo = normalizeRegNo(process.env.SUPER_ADMIN_REG_NO ?? 'ADMIN001');

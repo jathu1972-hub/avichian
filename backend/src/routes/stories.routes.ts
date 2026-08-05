@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
-import { authenticate, type AuthRequest } from '../middleware/auth.js';
+import { authenticate, requirePasswordReady, type AuthRequest } from '../middleware/auth.js';
 import { requireRoles } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validate.js';
 import {
@@ -10,7 +10,9 @@ import {
   deleteStoryOwned,
   getActiveStories,
   hideStory,
+  listStoryViewers,
   muteUserStories,
+  recordStoryView,
   reportStory,
 } from '../services/stories.service.js';
 import { mediaUrlSchema } from '../utils/media.js';
@@ -33,7 +35,7 @@ const upload = multer({
 
 export const storiesRouter = Router();
 
-storiesRouter.use(authenticate, requireRoles('STUDENT', 'STAFF', 'SUPER_ADMIN'));
+storiesRouter.use(authenticate, requirePasswordReady, requireRoles('STUDENT', 'STAFF', 'SUPER_ADMIN'));
 
 storiesRouter.get('/', async (req: AuthRequest, res, next) => {
   try {
@@ -137,6 +139,24 @@ storiesRouter.post('/', (req: AuthRequest, res, next) => {
 storiesRouter.post('/mute/:userId', async (req: AuthRequest, res, next) => {
   try {
     const data = await muteUserStories(req.user!.id, routeParam(req.params.userId));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+storiesRouter.post('/:storyId/view', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await recordStoryView(req.user!.id, routeParam(req.params.storyId));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+storiesRouter.get('/:storyId/viewers', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await listStoryViewers(req.user!.id, routeParam(req.params.storyId));
     res.json({ success: true, data });
   } catch (error) {
     next(error);

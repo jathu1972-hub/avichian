@@ -18,9 +18,16 @@ import {
   softDeleteStudent,
   suspendStudent,
   unlockStudentAccount,
+  lockStudentAccount,
   updateStudent,
   warnStudent,
+  forceStudentPasswordChange,
 } from '../services/super-admin/students.service.js';
+import {
+  createSuperAdminAccount,
+  listSuperAdmins,
+  repairAdminRoles,
+} from '../services/super-admin/admins.service.js';
 import {
   activateStaff,
   createStaff,
@@ -48,6 +55,20 @@ import {
   softDeletePost,
   softDeleteStory,
 } from '../services/super-admin/moderation.service.js';
+import {
+  adminCreateEvent,
+  adminDeleteEvent,
+  adminListEvents,
+  adminListParticipants,
+  adminUpdateEvent,
+  exportParticipantsCsv,
+  processEventReminders,
+} from '../services/events.service.js';
+import {
+  adminListReels,
+  deleteReelOwned,
+  restoreReel,
+} from '../services/reels.service.js';
 import { prisma } from '../lib/prisma.js';
 import { importStudentMasterFromPayload } from '../services/student-master.service.js';
 import { writeAuditLog } from '../services/audit.service.js';
@@ -96,20 +117,28 @@ router.get('/students/master', async (req, res, next) => {
 router.post(
   '/students',
   validateBody(
-    z.object({
-      regNo: z.string().min(1),
-      name: z.string().min(1),
-      email: z.string().email(),
-      mobile: z.string().min(10),
-      departmentId: z.string().uuid(),
-      year: z.number().int().optional(),
-      password: z.string().min(8),
-    }),
+    z
+      .object({
+        regNo: z.string().min(1),
+        name: z.string().min(1),
+        email: z.string().email(),
+        mobile: z.string().min(10).optional().nullable(),
+        departmentId: z.string().uuid(),
+        year: z.number().int().min(1).max(6).optional(),
+        section: z.string().max(20).optional().nullable(),
+        password: z.string().min(8),
+        confirmPassword: z.string().min(8).optional(),
+        status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+      })
+      .refine((d) => !d.confirmPassword || d.password === d.confirmPassword, {
+        message: 'Passwords do not match',
+        path: ['confirmPassword'],
+      }),
   ),
   async (req: AuthRequest, res, next) => {
     try {
       const data = await createStudentAccount(req.body, req.user!.id, getRequestMeta(req));
-      res.json({ success: true, data });
+      res.status(201).json({ success: true, data });
     } catch (error) {
       next(error);
     }
@@ -143,7 +172,9 @@ router.patch(
       mobile: z.string().optional(),
       departmentId: z.string().uuid().optional(),
       year: z.number().int().nullable().optional(),
+      section: z.string().max(20).nullable().optional(),
       verifiedBadge: z.boolean().optional(),
+      status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(),
     }),
   ),
   async (req: AuthRequest, res, next) => {
@@ -248,15 +279,25 @@ router.post(
 );
 
 router.post(
-  '/students/:id/reset-password',
-  validateBody(z.object({ password: z.string().min(8) })),
+  '/students/:id/lock',
+  validateBody(
+    z
+      .object({
+        reason: z.string().max(500).optional(),
+        durationMinutes: z.number().int().min(1).max(60 * 24 * 30).optional(),
+      })
+      .optional(),
+  ),
   async (req: AuthRequest, res, next) => {
     try {
-      const result = await resetStudentPassword(
+      const result = await lockStudentAccount(
         routeParam(req.params.id),
-        req.body.password,
         req.user!.id,
         getRequestMeta(req),
+        {
+          reason: req.body?.reason,
+          durationMinutes: req.body?.durationMinutes,
+        },
       );
       res.json({ success: true, data: result });
     } catch (error) {
@@ -264,6 +305,101 @@ router.post(
     }
   },
 );
+
+router.post(
+  '/students/:id/reset-password',
+  validateBody(
+    z
+      .object({
+        password: z.string().min(8),
+        confirmPassword: z.string().min(8).optional(),
+        reason: z.string().max(500).optional(),
+      })
+      .refine((d) => !d.confirmPassword || d.password === d.confirmPassword, {
+        message: 'Passwords do not match',
+        path: ['confirmPassword'],
+      }),
+  ),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const result = await resetStudentPassword(
+        routeParam(req.params.id),
+        req.body.password,
+        req.user!.id,
+        getRequestMeta(req),
+        req.body.confirmPassword,
+        req.body.reason,
+      );
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  '/students/:id/force-password-change',
+  validateBody(z.object({ reason: z.string().max(500).optional() }).optional()),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const result = await forceStudentPasswordChange(
+        routeParam(req.params.id),
+        req.user!.id,
+        getRequestMeta(req),
+        req.body?.reason,
+      );
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// ── Super Admins ──────────────────────────────────────────
+router.get('/admins', async (_req, res, next) => {
+  try {
+    const data = await listSuperAdmins();
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post(
+  '/admins',
+  validateBody(
+    z
+      .object({
+        name: z.string().min(1),
+        employeeId: z.string().min(1),
+        email: z.string().email(),
+        mobile: z.string().min(10).optional().nullable(),
+        password: z.string().min(8),
+        confirmPassword: z.string().min(8).optional(),
+      })
+      .refine((d) => !d.confirmPassword || d.password === d.confirmPassword, {
+        message: 'Passwords do not match',
+        path: ['confirmPassword'],
+      }),
+  ),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const data = await createSuperAdminAccount(req.body, req.user!.id, getRequestMeta(req));
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post('/admins/repair-roles', async (_req, res, next) => {
+  try {
+    const data = await repairAdminRoles();
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.post('/students/:id/logout-all', async (req: AuthRequest, res, next) => {
   try {
@@ -502,11 +638,19 @@ router.delete('/stories/:id', async (req: AuthRequest, res, next) => {
   }
 });
 
-// ── Reports ───────────────────────────────────────────────
+// ── Reports & Complaints (moderation) ─────────────────────
 router.get('/reports', async (req, res, next) => {
   try {
-    const status = req.query.status as 'OPEN' | 'REVIEWING' | 'ACTIONED' | 'CLOSED' | undefined;
-    const data = await listReports(status);
+    const { adminListReportsEnhanced } = await import('../services/safety.service.js');
+    const status = req.query.status as
+      | 'OPEN'
+      | 'REVIEWING'
+      | 'ACTIONED'
+      | 'CLOSED'
+      | 'REJECTED'
+      | 'APPEALED'
+      | undefined;
+    const data = await adminListReportsEnhanced(status);
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -517,18 +661,71 @@ router.post(
   '/reports/:id/resolve',
   validateBody(
     z.object({
-      status: z.enum(['OPEN', 'REVIEWING', 'ACTIONED', 'CLOSED']),
+      status: z.enum(['OPEN', 'REVIEWING', 'ACTIONED', 'CLOSED', 'REJECTED', 'APPEALED']),
       adminNotes: z.string().optional(),
-      action: z.enum(['delete_post', 'suspend_user', 'warn', 'none']).optional(),
+      action: z
+        .enum([
+          'delete_post',
+          'delete_story',
+          'delete_reel',
+          'delete_comment',
+          'suspend_user',
+          'ban_user',
+          'warn',
+          'none',
+        ])
+        .optional(),
     }),
   ),
   async (req: AuthRequest, res, next) => {
     try {
-      const data = await resolveReport(
-        routeParam(req.params.id),
+      const { adminResolveReport } = await import('../services/safety.service.js');
+      const data = await adminResolveReport(
         req.user!.id,
+        routeParam(req.params.id),
         req.body,
         getRequestMeta(req),
+      );
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.get('/complaints', async (req, res, next) => {
+  try {
+    const { adminListComplaints } = await import('../services/safety.service.js');
+    const status = req.query.status as
+      | 'OPEN'
+      | 'IN_PROGRESS'
+      | 'RESOLVED'
+      | 'CLOSED'
+      | 'DISMISSED'
+      | undefined;
+    const data = await adminListComplaints(status);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch(
+  '/complaints/:id',
+  validateBody(
+    z.object({
+      status: z.enum(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED', 'DISMISSED']).optional(),
+      adminNotes: z.string().max(2000).optional(),
+      priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
+    }),
+  ),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { adminUpdateComplaint } = await import('../services/safety.service.js');
+      const data = await adminUpdateComplaint(
+        req.user!.id,
+        routeParam(req.params.id),
+        req.body,
       );
       res.json({ success: true, data });
     } catch (error) {
@@ -581,7 +778,20 @@ router.delete('/announcements/:id', async (req: AuthRequest, res, next) => {
   }
 });
 
-router.get('/events', async (_req, res, next) => {
+// Campus events (primary) + legacy department events still available via /events/legacy
+router.get('/events', async (req, res, next) => {
+  try {
+    const data = await adminListEvents({
+      search: req.query.search as string | undefined,
+      status: req.query.status as string | undefined,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/events/legacy', async (_req, res, next) => {
   try {
     const data = await listCollegeEvents();
     res.json({ success: true, data });
@@ -594,16 +804,74 @@ router.post(
   '/events',
   validateBody(
     z.object({
-      name: z.string().min(1),
+      title: z.string().min(1).optional(),
+      name: z.string().min(1).optional(), // legacy alias
       description: z.string().optional(),
-      startsAt: z.string(),
+      category: z
+        .enum([
+          'COLLEGE',
+          'DEPARTMENT',
+          'CLUBS',
+          'WORKSHOPS',
+          'SPORTS',
+          'CULTURAL',
+          'SEMINARS',
+          'COMPETITIONS',
+          'EXAMS',
+          'HOLIDAYS',
+          'OTHER',
+        ])
+        .optional(),
+      departmentId: z.string().uuid().optional().nullable(),
       venue: z.string().optional(),
-      departmentId: z.string().uuid().optional(),
+      bannerUrl: z.string().optional().nullable(),
+      organizer: z.string().optional(),
+      speaker: z.string().optional(),
+      capacity: z.number().int().positive().optional().nullable(),
+      startsAt: z.string(),
+      endsAt: z.string().optional().nullable(),
+      registrationDeadline: z.string().optional().nullable(),
+      visibility: z.enum(['ALL_STUDENTS', 'DEPARTMENT_ONLY']).optional(),
+      status: z
+        .enum(['DRAFT', 'UPCOMING', 'LIVE', 'COMPLETED', 'CANCELLED', 'HIDDEN'])
+        .optional(),
+      published: z.boolean().optional(),
+      featured: z.boolean().optional(),
+      gallery: z.array(z.unknown()).optional(),
+      schedule: z.array(z.unknown()).optional(),
     }),
   ),
   async (req: AuthRequest, res, next) => {
     try {
+      const body = {
+        ...req.body,
+        title: req.body.title || req.body.name,
+      };
+      // Prefer campus events module; fall back to legacy if no title after map
+      if (body.title) {
+        const data = await adminCreateEvent(body, req.user!.id, getRequestMeta(req));
+        res.status(201).json({ success: true, data });
+        return;
+      }
       const data = await createCollegeEvent(req.body, req.user!.id, getRequestMeta(req));
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.patch(
+  '/events/:id',
+  validateBody(z.record(z.unknown())),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const data = await adminUpdateEvent(
+        routeParam(req.params.id),
+        req.body,
+        req.user!.id,
+        getRequestMeta(req),
+      );
       res.json({ success: true, data });
     } catch (error) {
       next(error);
@@ -613,9 +881,89 @@ router.post(
 
 router.delete('/events/:id', async (req: AuthRequest, res, next) => {
   try {
-    const data = await deleteEvent(
+    try {
+      const data = await adminDeleteEvent(
+        routeParam(req.params.id),
+        req.user!.id,
+        getRequestMeta(req),
+      );
+      res.json({ success: true, data });
+    } catch {
+      const data = await deleteEvent(
+        routeParam(req.params.id),
+        req.user!.id,
+        getRequestMeta(req),
+      );
+      res.json({ success: true, data });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/events/:id/participants', async (req, res, next) => {
+  try {
+    const data = await adminListParticipants(routeParam(req.params.id));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/events/:id/participants.csv', async (req, res, next) => {
+  try {
+    const csv = await exportParticipantsCsv(routeParam(req.params.id));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="event-${routeParam(req.params.id)}-participants.csv"`,
+    );
+    res.send(csv);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/events/reminders/run', async (_req, res, next) => {
+  try {
+    const data = await processEventReminders();
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Reels moderation ──────────────────────────────────────
+router.get('/reels', async (req, res, next) => {
+  try {
+    const data = await adminListReels({
+      search: req.query.search as string | undefined,
+      includeDeleted: req.query.includeDeleted === 'true',
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/reels/:id', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await deleteReelOwned(
+      { id: req.user!.id, role: req.user!.role },
       routeParam(req.params.id),
-      req.user!.id,
+      getRequestMeta(req),
+    );
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/reels/:id/restore', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await restoreReel(
+      { id: req.user!.id, role: req.user!.role },
+      routeParam(req.params.id),
       getRequestMeta(req),
     );
     res.json({ success: true, data });
@@ -709,6 +1057,163 @@ router.get('/search', async (req, res, next) => {
         departments,
       },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── Communities ───────────────────────────────────────────
+const communityBodySchema = z.object({
+  name: z.string().min(2).max(120),
+  description: z.string().max(2000).optional(),
+  category: z
+    .enum([
+      'CLUB',
+      'SPORTS',
+      'CULTURAL',
+      'ACADEMIC',
+      'DEPARTMENT',
+      'OFFICIAL',
+      'HOBBY',
+      'TECH',
+      'OTHER',
+    ])
+    .optional(),
+  departmentId: z.string().uuid().optional().nullable(),
+  bannerUrl: z.string().max(500_000).optional().nullable(),
+  iconUrl: z.string().max(500_000).optional().nullable(),
+  visibility: z.enum(['PUBLIC', 'PRIVATE']).optional(),
+  accessType: z.enum(['OPEN', 'REQUEST', 'INVITE']).optional(),
+  status: z.enum(['ACTIVE', 'ARCHIVED', 'HIDDEN']).optional(),
+  rules: z.string().max(5000).optional().nullable(),
+  tags: z.array(z.string().max(40)).max(12).optional(),
+  chatEnabled: z.boolean().optional(),
+  featured: z.boolean().optional(),
+  moderatorIds: z.array(z.string().uuid()).max(20).optional(),
+});
+
+router.get('/communities', async (req: AuthRequest, res, next) => {
+  try {
+    const { adminListCommunities } = await import('../services/communities.service.js');
+    const data = await adminListCommunities({
+      search: req.query.search as string | undefined,
+      status: req.query.status as string | undefined,
+      category: req.query.category as string | undefined,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/communities/:id', async (req: AuthRequest, res, next) => {
+  try {
+    const { getCommunityDetail, listMembers } = await import('../services/communities.service.js');
+    const id = routeParam(req.params.id);
+    const community = await getCommunityDetail(id, req.user!.id, true);
+    const members = await listMembers(id, req.user!.id, true);
+    res.json({ success: true, data: { community, members } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post(
+  '/communities',
+  validateBody(communityBodySchema),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { createCommunity } = await import('../services/communities.service.js');
+      const data = await createCommunity(req.user!.id, req.body, getRequestMeta(req));
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.put(
+  '/communities/:id',
+  validateBody(communityBodySchema.partial()),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { updateCommunity } = await import('../services/communities.service.js');
+      const data = await updateCommunity(
+        req.user!.id,
+        routeParam(req.params.id),
+        req.body,
+        getRequestMeta(req),
+      );
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post('/communities/:id/archive', async (req: AuthRequest, res, next) => {
+  try {
+    const { archiveCommunity } = await import('../services/communities.service.js');
+    const data = await archiveCommunity(
+      req.user!.id,
+      routeParam(req.params.id),
+      getRequestMeta(req),
+    );
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/communities/:id', async (req: AuthRequest, res, next) => {
+  try {
+    const { deleteCommunity } = await import('../services/communities.service.js');
+    const data = await deleteCommunity(
+      req.user!.id,
+      routeParam(req.params.id),
+      getRequestMeta(req),
+    );
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post(
+  '/communities/:id/moderators',
+  validateBody(
+    z.object({
+      userId: z.string().uuid(),
+      role: z.enum(['MODERATOR', 'MEMBER', 'ADMIN']).optional(),
+    }),
+  ),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { setModerator } = await import('../services/communities.service.js');
+      const data = await setModerator(
+        req.user!.id,
+        routeParam(req.params.id),
+        req.body.userId,
+        req.body.role ?? 'MODERATOR',
+        getRequestMeta(req),
+      );
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.delete('/communities/:id/members/:userId', async (req: AuthRequest, res, next) => {
+  try {
+    const { removeMember } = await import('../services/communities.service.js');
+    const data = await removeMember(
+      req.user!.id,
+      routeParam(req.params.id),
+      routeParam(req.params.userId),
+      getRequestMeta(req),
+    );
+    res.json({ success: true, data });
   } catch (error) {
     next(error);
   }

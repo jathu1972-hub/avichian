@@ -28,8 +28,18 @@ export function errorHandler(
     res.status(413).json({
       success: false,
       error:
-        'Upload too large. Use the media upload endpoint for photos/videos (images up to 20MB, videos up to 500MB).',
+        'Upload too large. Limits: images 20MB · videos / stories / reels 100MB. Use POST /api/uploads with multipart field "file".',
       code: 'PAYLOAD_TOO_LARGE',
+    });
+    return;
+  }
+
+  // Multer / busboy unexpected errors
+  if (err.name === 'MulterError' || (err as { code?: string }).code?.startsWith?.('LIMIT_')) {
+    res.status(400).json({
+      success: false,
+      error: err.message || 'Upload rejected',
+      code: (err as { code?: string }).code || 'UPLOAD_ERROR',
     });
     return;
   }
@@ -37,6 +47,9 @@ export function errorHandler(
   console.error('[Unhandled Error]', err);
   res.status(500).json({
     success: false,
-    error: env.isProduction ? 'Internal server error' : err.message,
+    error: env.isProduction
+      ? 'Internal server error during upload. Check API logs.'
+      : err.message || 'Internal server error',
+    code: 'INTERNAL_ERROR',
   });
 }

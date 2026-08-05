@@ -47,6 +47,7 @@ function mapStoryItem(story: {
   id: string;
   mediaUrl: string;
   mediaType: StoryMediaType;
+  mediaMimeType?: string | null;
   caption: string | null;
   visibility: StoryVisibility;
   createdAt: Date;
@@ -56,6 +57,7 @@ function mapStoryItem(story: {
     id: story.id,
     mediaUrl: story.mediaUrl,
     mediaType: story.mediaType,
+    mediaMimeType: story.mediaMimeType ?? null,
     caption: story.caption,
     visibility: story.visibility,
     createdAt: story.createdAt.toISOString(),
@@ -68,6 +70,7 @@ function toPublicStory(story: {
   userId: string;
   mediaUrl: string;
   mediaType: StoryMediaType;
+  mediaMimeType?: string | null;
   caption: string | null;
   visibility: StoryVisibility;
   createdAt: Date;
@@ -82,6 +85,7 @@ function toPublicStory(story: {
     id: story.id,
     userId: story.userId,
     mediaUrl: story.mediaUrl,
+    mediaMimeType: story.mediaMimeType ?? null,
     mediaType: story.mediaType,
     caption: story.caption,
     visibility: story.visibility,
@@ -120,10 +124,12 @@ export async function createStory(
   const mediaType = inferStoryMediaType(data.mediaUrl, data.mediaType, data.mimeType);
   const visibility = parseVisibility(data.visibility);
   const expiresAt = new Date(Date.now() + STORY_TTL_MS);
+  const mediaMimeType = data.mimeType?.trim() || null;
 
   console.info('[story] inserting PostgreSQL record', {
     userId,
     mediaType,
+    mediaMimeType,
     visibility,
     mediaUrl: data.mediaUrl.slice(0, 80),
     expiresAt: expiresAt.toISOString(),
@@ -135,6 +141,7 @@ export async function createStory(
         userId,
         mediaUrl: data.mediaUrl.trim(),
         mediaType,
+        mediaMimeType,
         visibility,
         caption: data.caption ? sanitizeText(data.caption, 200) : null,
         expiresAt,
@@ -463,4 +470,59 @@ export async function reportStory(
   });
 
   return { message: 'Report submitted.', id: report.id };
+}
+
+export async function recordStoryView(viewerId: string, storyId: string) {
+  const story = await prisma.story.findFirst({
+    where: {
+      id: storyId,
+      isDeleted: false,
+      expiresAt: { gt: new Date() },
+    },
+  });
+  if (!story) throw new AppError(404, 'Story not found');
+  // Owners do not count as viewers of their own story
+  if (story.userId === viewerId) {
+    return { recorded: false };
+  }
+  await prisma.storyView.upsert({
+    where: { storyId_viewerId: { storyId, viewerId } },
+    create: { storyId, viewerId },
+    update: { viewedAt: new Date() },
+  });
+  return { recorded: true };
+}
+
+export async function listStoryViewers(ownerId: string, storyId: string) {
+  const story = await prisma.story.findFirst({
+    where: { id: storyId, isDeleted: false },
+  });
+  if (!story) throw new AppError(404, 'Story not found');
+  if (story.userId !== ownerId) {
+    throw new AppError(403, 'Only the story owner can see viewers');
+  }
+  const views = await prisma.storyView.findMany({
+    where: { storyId },
+    orderBy: { viewedAt: 'desc' },
+    take: 100,
+    include: {
+      viewer: {
+        select: {
+          id: true,
+          regNo: true,
+          profile: { select: { name: true, profilePhotoUrl: true } },
+        },
+      },
+    },
+  });
+  return {
+    count: views.length,
+    viewers: views.map((v) => ({
+      id: v.viewer.id,
+      regNo: v.viewer.regNo,
+      name: v.viewer.profile?.name ?? v.viewer.regNo,
+      profilePhotoUrl: v.viewer.profile?.profilePhotoUrl ?? null,
+      viewedAt: v.viewedAt.toISOString(),
+    })),
+  };
 }

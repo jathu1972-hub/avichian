@@ -1,0 +1,37 @@
+# Student App — Netlify static SPA
+#
+# Netlify UI settings:
+#   Base directory: student-app   (OR leave empty and use monorepo root commands below)
+#   Publish:        dist          (when base = student-app)
+#   OR publish:     student-app/dist (when base = monorepo root)
+#
+# Environment variables (Site → Environment):
+#   VITE_API_URL = https://YOUR-API.onrender.com
+#   (origin only is OK; trailing /api also accepted by the app)
+
+[build]
+  # When Netlify Base directory = monorepo root (recommended):
+  command = "npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/student-app"
+  publish = "student-app/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(self), microphone=(self), geolocation=()"

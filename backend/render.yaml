@@ -1,0 +1,55 @@
+# Render Blueprint — AVICHIAN Backend (from monorepo root)
+# Render → New → Blueprint → connect jathu1972-hub/avichian
+# Set Root Directory to "backend" if using service-only, OR deploy monorepo with:
+#   Root Directory: .
+#   Build: npm ci && npm run build -w @avichian/shared && npm run build -w backend
+#
+# Free web + free Postgres. After deploy set PUBLIC_API_URL to the service URL.
+
+services:
+  - type: web
+    name: avichian-api
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: .
+    buildCommand: npm ci && npm run build -w @avichian/shared && npx prisma generate --schema=backend/prisma/schema.prisma && npm run build -w backend
+    startCommand: cd backend && npx prisma migrate deploy || npx prisma db push; npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: CROSS_SITE_COOKIES
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: avichian-db
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: FRONTEND_URLS
+        sync: false
+      - key: PUBLIC_API_URL
+        sync: false
+      - key: ACCESS_TOKEN_EXPIRY
+        value: 15m
+      - key: REFRESH_TOKEN_EXPIRY_DAYS
+        value: "30"
+      - key: COLLEGE_EMAIL_DOMAIN
+        value: avichi.edu
+      - key: SMS_PROVIDER
+        value: console
+
+databases:
+  - name: avichian-db
+    plan: free
+    databaseName: avichian
+    user: avichian

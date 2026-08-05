@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authenticate, type AuthRequest } from '../middleware/auth.js';
+import { authenticate, requirePasswordReady, type AuthRequest } from '../middleware/auth.js';
 import { requireRoles } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validate.js';
 import {
@@ -21,6 +21,7 @@ import { getRequestMeta } from '../middleware/request-meta.js';
 const createPostSchema = z.object({
   caption: z.string().max(2000).optional(),
   mediaUrl: optionalMediaUrlSchema,
+  mediaMimeType: z.string().max(120).optional().nullable(),
   visibility: z.enum(['PUBLIC', 'FRIENDS', 'DEPARTMENT', 'PRIVATE']).optional(),
 });
 
@@ -36,7 +37,7 @@ const reportSchema = z.object({
 
 export const postsRouter = Router();
 
-postsRouter.use(authenticate, requireRoles('STUDENT', 'STAFF', 'SUPER_ADMIN'));
+postsRouter.use(authenticate, requirePasswordReady, requireRoles('STUDENT', 'STAFF', 'SUPER_ADMIN'));
 
 postsRouter.get('/feed', async (req: AuthRequest, res, next) => {
   try {

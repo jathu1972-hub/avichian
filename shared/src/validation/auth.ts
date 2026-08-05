@@ -34,12 +34,16 @@ export function isValidEmail(email: string, domain?: string): boolean {
   return true;
 }
 
+/** Special characters allowed for campus passwords */
+const SPECIAL = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/;
+
 export function isValidPassword(password: string): boolean {
   return (
     password.length >= PASSWORD_MIN &&
     /[A-Z]/.test(password) &&
     /[a-z]/.test(password) &&
-    /\d/.test(password)
+    /\d/.test(password) &&
+    SPECIAL.test(password)
   );
 }
 
@@ -50,13 +54,22 @@ export function normalizeDepartment(department: string): string {
 export function isValidPasswordDetailed(password: string): {
   valid: boolean;
   errors: string[];
+  score: number;
 } {
   const errors: string[] = [];
-  if (password.length < PASSWORD_MIN) errors.push(`At least ${PASSWORD_MIN} characters`);
-  if (!/[A-Z]/.test(password)) errors.push('One uppercase letter');
-  if (!/[a-z]/.test(password)) errors.push('One lowercase letter');
-  if (!/\d/.test(password)) errors.push('One number');
-  return { valid: errors.length === 0, errors };
+  let score = 0;
+  if (password.length >= PASSWORD_MIN) score += 1;
+  else errors.push(`At least ${PASSWORD_MIN} characters`);
+  if (/[A-Z]/.test(password)) score += 1;
+  else errors.push('One uppercase letter');
+  if (/[a-z]/.test(password)) score += 1;
+  else errors.push('One lowercase letter');
+  if (/\d/.test(password)) score += 1;
+  else errors.push('One number');
+  if (SPECIAL.test(password)) score += 1;
+  else errors.push('One special character (!@#$%^&*…)');
+  if (password.length >= 12) score += 1;
+  return { valid: errors.length === 0, errors, score: Math.min(5, score) };
 }
 
 export function sanitizeText(input: string, maxLength = 500): string {

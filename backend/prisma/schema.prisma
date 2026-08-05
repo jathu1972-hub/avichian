@@ -76,6 +76,16 @@ enum ContentReportReason {
   ILLEGAL_CONTENT
   SCAM
   INAPPROPRIATE
+  HATE_SPEECH
+  THREATS
+  NUDITY
+  CHILD_SAFETY
+  COPYRIGHT
+  MISINFORMATION
+  IMPERSONATION
+  SELF_HARM
+  TERRORISM
+  INAPPROPRIATE_LANGUAGE
   OTHER
 }
 
@@ -84,6 +94,8 @@ enum ContentReportStatus {
   REVIEWING
   ACTIONED
   CLOSED
+  REJECTED
+  APPEALED
 }
 
 enum ContentReportTarget {
@@ -92,6 +104,8 @@ enum ContentReportTarget {
   MESSAGE
   USER
   COMMENT
+  REEL
+  COMMUNITY
 }
 
 enum PostVisibility {
@@ -154,6 +168,44 @@ enum ProfilePrivacy {
   PRIVATE
 }
 
+enum EventCategory {
+  COLLEGE
+  DEPARTMENT
+  CLUBS
+  WORKSHOPS
+  SPORTS
+  CULTURAL
+  SEMINARS
+  COMPETITIONS
+  EXAMS
+  HOLIDAYS
+  OTHER
+}
+
+enum CampusEventStatus {
+  DRAFT
+  UPCOMING
+  LIVE
+  COMPLETED
+  CANCELLED
+  HIDDEN
+}
+
+enum EventVisibility {
+  ALL_STUDENTS
+  DEPARTMENT_ONLY
+}
+
+enum PersonalEventType {
+  REMINDER
+  ASSIGNMENT
+  MEETING
+  PROJECT
+  BIRTHDAY
+  PRACTICE
+  OTHER
+}
+
 model Department {
   id        String   @id @default(uuid())
   name      String   @unique
@@ -166,8 +218,207 @@ model Department {
   staff         Staff[]
   announcements Announcement[]
   events        DepartmentEvent[]
+  campusEvents  CampusEvent[]
+  communities   Community[]
 
   @@map("departments")
+}
+
+/// College-wide / campus events (production Events module)
+model CampusEvent {
+  id                   String            @id @default(uuid())
+  title                String
+  description          String            @default("")
+  category             EventCategory     @default(COLLEGE)
+  departmentId         String?           @map("department_id")
+  venue                String?
+  bannerUrl            String?           @map("banner_url")
+  organizer            String?
+  speaker              String?
+  capacity             Int?
+  registeredCount      Int               @default(0) @map("registered_count")
+  interestedCount      Int               @default(0) @map("interested_count")
+  startsAt             DateTime          @map("starts_at")
+  endsAt               DateTime?         @map("ends_at")
+  registrationDeadline DateTime?         @map("registration_deadline")
+  visibility           EventVisibility   @default(ALL_STUDENTS)
+  status               CampusEventStatus @default(UPCOMING)
+  published            Boolean           @default(true)
+  featured             Boolean           @default(false)
+  gallery              Json?
+  schedule             Json?
+  createdById          String            @map("created_by_id")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+
+  department   Department?         @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  participants EventParticipant[]
+  interests    EventInterest[]
+
+  @@index([startsAt])
+  @@index([status])
+  @@index([category])
+  @@index([departmentId])
+  @@index([published, status])
+  @@map("campus_events")
+}
+
+model EventParticipant {
+  id        String   @id @default(uuid())
+  eventId   String   @map("event_id")
+  userId    String   @map("user_id")
+  joinedAt  DateTime @default(now()) @map("joined_at")
+
+  event CampusEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+  @@map("event_participants")
+}
+
+model EventInterest {
+  id         String   @id @default(uuid())
+  eventId    String   @map("event_id")
+  userId     String   @map("user_id")
+  interested Boolean  @default(true)
+  bookmarked Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  event CampusEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+  @@map("event_interests")
+}
+
+// ── Communities ───────────────────────────────────────────
+
+enum CommunityCategory {
+  CLUB
+  SPORTS
+  CULTURAL
+  ACADEMIC
+  DEPARTMENT
+  OFFICIAL
+  HOBBY
+  TECH
+  OTHER
+}
+
+enum CommunityVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum CommunityAccess {
+  OPEN
+  REQUEST
+  INVITE
+}
+
+enum CommunityStatus {
+  ACTIVE
+  ARCHIVED
+  HIDDEN
+}
+
+enum CommunityMemberRole {
+  MEMBER
+  MODERATOR
+  ADMIN
+}
+
+model Community {
+  id           String               @id @default(uuid())
+  name         String
+  slug         String               @unique
+  description  String               @default("")
+  category     CommunityCategory    @default(CLUB)
+  departmentId String?              @map("department_id")
+  bannerUrl    String?              @map("banner_url")
+  iconUrl      String?              @map("icon_url")
+  visibility   CommunityVisibility  @default(PUBLIC)
+  accessType   CommunityAccess      @default(OPEN)
+  status       CommunityStatus      @default(ACTIVE)
+  rules        String?
+  tags         String[]             @default([])
+  chatEnabled  Boolean              @default(true) @map("chat_enabled")
+  featured     Boolean              @default(false)
+  memberCount  Int                  @default(0) @map("member_count")
+  postCount    Int                  @default(0) @map("post_count")
+  createdById  String               @map("created_by_id")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+
+  department Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  createdBy  User              @relation("CommunityCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members    CommunityMember[]
+  posts      CommunityPost[]
+
+  @@index([status, category])
+  @@index([departmentId])
+  @@index([createdAt])
+  @@index([featured])
+  @@map("communities")
+}
+
+model CommunityMember {
+  id          String              @id @default(uuid())
+  communityId String              @map("community_id")
+  userId      String              @map("user_id")
+  role        CommunityMemberRole @default(MEMBER)
+  joinedAt    DateTime            @default(now()) @map("joined_at")
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, userId])
+  @@index([userId])
+  @@index([communityId, role])
+  @@map("community_members")
+}
+
+model CommunityPost {
+  id          String    @id @default(uuid())
+  communityId String    @map("community_id")
+  userId      String    @map("user_id")
+  content     String
+  mediaUrl    String?   @map("media_url")
+  pinned      Boolean   @default(false)
+  isDeleted   Boolean   @default(false) @map("is_deleted")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([communityId, createdAt])
+  @@index([userId])
+  @@map("community_posts")
+}
+
+/// Private student calendar items (only owner can see)
+model PersonalEvent {
+  id          String            @id @default(uuid())
+  userId      String            @map("user_id")
+  title       String
+  description String?
+  type        PersonalEventType @default(REMINDER)
+  startsAt    DateTime          @map("starts_at")
+  endsAt      DateTime?         @map("ends_at")
+  /// When to fire an in-app reminder (null = none)
+  reminderAt  DateTime?         @map("reminder_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startsAt])
+  @@index([reminderAt])
+  @@map("personal_events")
 }
 
 model Announcement {
@@ -264,6 +515,7 @@ model User {
   suspendedAt      DateTime? @map("suspended_at")
   deletedAt        DateTime? @map("deleted_at")
   forcePasswordChange Boolean @default(false) @map("force_password_change")
+  /// Alias for college ops: first login / after admin temp password (same as forcePasswordChange)
   verifiedBadge    Boolean   @default(false) @map("verified_badge")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
@@ -277,9 +529,12 @@ model User {
   otpCodes      OtpCode[]
   loginHistory  LoginHistory[]
   auditLogs     AuditLog[]
+  passwordResets PasswordResetLog[] @relation("PasswordResetStudent")
+  passwordResetsByAdmin PasswordResetLog[] @relation("PasswordResetAdmin")
   posts         Post[]
   postLikes     PostLike[]
   stories       Story[]
+  storyViews    StoryView[]
   reels         Reel[]
   reelLikes     ReelLike[]
   sentFriendRequests     FriendRequest[] @relation("FriendRequestSender")
@@ -296,11 +551,63 @@ model User {
   postsDeleted        Post[]  @relation("PostDeletedBy")
   storiesDeleted      Story[] @relation("StoryDeletedBy")
   reelsDeleted        Reel[]  @relation("ReelDeletedBy")
+  eventParticipations EventParticipant[]
+  eventInterests      EventInterest[]
+  personalEvents      PersonalEvent[]
+  reelComments        ReelComment[]
+  reelCommentLikes    ReelCommentLike[]
+  savedReels          SavedReel[]
+  communitiesCreated  Community[]       @relation("CommunityCreator")
+  communityMembers    CommunityMember[]
+  communityPosts      CommunityPost[]
+  settings            UserSettings?
+  mutedUsers          UserMute[]        @relation("MuteActor")
+  mutedByUsers        UserMute[]        @relation("MuteTarget")
+  complaints          Complaint[]
+  moderationActions   ModerationAction[]
 
   @@index([departmentId])
   @@index([role])
   @@index([createdAt])
   @@map("users")
+}
+
+/// Per-user app preferences (privacy, notifications, appearance)
+model UserSettings {
+  id     String @id @default(uuid())
+  userId String @unique @map("user_id")
+
+  // Privacy
+  privateAccount     Boolean @default(false) @map("private_account")
+  whoCanMessage      String  @default("FRIENDS") @map("who_can_message") // EVERYONE | FRIENDS | NOBODY
+  whoCanCall         String  @default("FRIENDS") @map("who_can_call")
+  whoCanSeePosts     String  @default("PUBLIC") @map("who_can_see_posts") // PUBLIC | FRIENDS | DEPARTMENT | PRIVATE
+  whoCanSeeStories   String  @default("DEPARTMENT") @map("who_can_see_stories")
+  whoCanSeeProfile   String  @default("PUBLIC") @map("who_can_see_profile")
+
+  // Notifications
+  notifyLikes        Boolean @default(true) @map("notify_likes")
+  notifyComments     Boolean @default(true) @map("notify_comments")
+  notifyFriendRequests Boolean @default(true) @map("notify_friend_requests")
+  notifyMessages     Boolean @default(true) @map("notify_messages")
+  notifyCalls        Boolean @default(true) @map("notify_calls")
+  notifyEvents       Boolean @default(true) @map("notify_events")
+  notifyCommunities  Boolean @default(true) @map("notify_communities")
+  notifyAnnouncements Boolean @default(true) @map("notify_announcements")
+  notifyReminders    Boolean @default(true) @map("notify_reminders")
+  pushEnabled        Boolean @default(true) @map("push_enabled")
+
+  // Appearance
+  theme              String  @default("system") // light | dark | system
+  accentColor        String  @default("blue") @map("accent_color")
+  fontScale          String  @default("medium") @map("font_scale")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
 }
 
 model Profile {
@@ -309,6 +616,7 @@ model Profile {
   name            String
   bio             String?
   year            Int?
+  section         String?
   profilePhotoUrl String?        @map("profile_photo_url")
   coverPhotoUrl   String?        @map("cover_photo_url")
   privacy         ProfilePrivacy @default(PUBLIC)
@@ -428,6 +736,22 @@ model LoginHistory {
   @@map("login_history")
 }
 
+/// Super Admin temporary password resets (never stores the password itself)
+model PasswordResetLog {
+  id          String   @id @default(uuid())
+  studentId   String   @map("student_id")
+  adminId     String   @map("admin_id")
+  resetReason String?  @map("reset_reason")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  student User @relation("PasswordResetStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  admin   User @relation("PasswordResetAdmin", fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, createdAt])
+  @@index([adminId, createdAt])
+  @@map("password_reset_logs")
+}
+
 model AuditLog {
   id           String      @id @default(uuid())
   userId       String?     @map("user_id")
@@ -452,6 +776,7 @@ model Post {
   authorId    String         @map("author_id") // ownerId
   caption     String?
   mediaUrl    String?        @map("media_url")
+  mediaMimeType String?      @map("media_mime_type")
   visibility  PostVisibility @default(DEPARTMENT)
   isDeleted   Boolean        @default(false) @map("is_deleted")
   deletedAt   DateTime?      @map("deleted_at")
@@ -502,6 +827,7 @@ model Story {
   userId      String          @map("user_id") // ownerId
   mediaUrl    String          @map("media_url")
   mediaType   StoryMediaType  @default(IMAGE) @map("media_type")
+  mediaMimeType String?       @map("media_mime_type")
   caption     String?
   visibility  StoryVisibility @default(DEPARTMENT)
   isDeleted   Boolean         @default(false) @map("is_deleted")
@@ -512,6 +838,7 @@ model Story {
 
   user      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   deletedBy User? @relation("StoryDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+  views     StoryView[]
 
   @@index([userId])
   @@index([expiresAt])
@@ -521,34 +848,57 @@ model Story {
   @@map("stories")
 }
 
+model StoryView {
+  id        String   @id @default(uuid())
+  storyId   String   @map("story_id")
+  viewerId  String   @map("viewer_id")
+  viewedAt  DateTime @default(now()) @map("viewed_at")
+
+  story  Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  viewer User  @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, viewerId])
+  @@index([storyId, viewedAt])
+  @@index([viewerId])
+  @@map("story_views")
+}
+
 model Reel {
-  id          String         @id @default(uuid())
-  authorId    String         @map("author_id") // ownerId
-  caption     String?
-  mediaUrl    String         @map("media_url")
-  coverUrl    String?        @map("cover_url")
-  visibility  PostVisibility @default(DEPARTMENT)
-  isDeleted   Boolean        @default(false) @map("is_deleted")
-  deletedAt   DateTime?      @map("deleted_at")
-  deletedById String?        @map("deleted_by_id")
-  archivedAt  DateTime?      @map("archived_at")
-  createdAt   DateTime       @default(now()) @map("created_at")
-  updatedAt   DateTime       @updatedAt @map("updated_at")
+  id            String         @id @default(uuid())
+  authorId      String         @map("author_id") // ownerId / userId
+  caption       String?
+  hashtags      String[]       @default([])
+  mediaUrl      String         @map("media_url") // videoUrl
+  mediaMimeType String?        @map("media_mime_type")
+  coverUrl      String?        @map("cover_url") // thumbnailUrl
+  audioName     String?        @map("audio_name")
+  durationSec   Int?           @map("duration_sec")
+  viewCount     Int            @default(0) @map("view_count")
+  visibility    PostVisibility @default(DEPARTMENT)
+  isDeleted     Boolean        @default(false) @map("is_deleted")
+  deletedAt     DateTime?      @map("deleted_at")
+  deletedById   String?        @map("deleted_by_id")
+  archivedAt    DateTime?      @map("archived_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
 
   author    User  @relation(fields: [authorId], references: [id], onDelete: Cascade)
   deletedBy User? @relation("ReelDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
   likes     ReelLike[]
+  comments  ReelComment[]
+  saves     SavedReel[]
 
   @@index([authorId])
   @@index([createdAt])
   @@index([isDeleted])
+  @@index([visibility])
   @@map("reels")
 }
 
 model ReelLike {
   id        String   @id @default(uuid())
   reelId    String   @map("reel_id")
-  userId    String   @map("user_id")
+  userId    String   @map("user_id") // studentId
   createdAt DateTime @default(now()) @map("created_at")
 
   reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
@@ -557,6 +907,56 @@ model ReelLike {
   @@unique([reelId, userId])
   @@index([userId])
   @@map("reel_likes")
+}
+
+model ReelComment {
+  id        String   @id @default(uuid())
+  reelId    String   @map("reel_id")
+  userId    String   @map("user_id") // studentId
+  body      String
+  parentId  String?  @map("parent_id")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  reel    Reel          @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent  ReelComment?  @relation("ReelCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies ReelComment[] @relation("ReelCommentReplies")
+  likes   ReelCommentLike[]
+
+  @@index([reelId, createdAt])
+  @@index([userId])
+  @@index([parentId])
+  @@map("reel_comments")
+}
+
+model ReelCommentLike {
+  id        String   @id @default(uuid())
+  commentId String   @map("comment_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  comment ReelComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([userId])
+  @@map("reel_comment_likes")
+}
+
+model SavedReel {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id") // studentId
+  reelId    String   @map("reel_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, reelId])
+  @@index([userId, createdAt])
+  @@map("saved_reels")
 }
 
 /// Per-user hide list (does not delete the content for others)
@@ -625,6 +1025,9 @@ model Message {
   body           String?
   type           MessageType @default(TEXT)
   mediaUrl       String?     @map("media_url")
+  fileName       String?     @map("file_name")
+  replyToId      String?     @map("reply_to_id")
+  deliveredAt    DateTime?   @map("delivered_at")
   seenAt         DateTime?   @map("seen_at")
   editedAt       DateTime?   @map("edited_at")
   deletedAt      DateTime?   @map("deleted_at")
@@ -632,9 +1035,12 @@ model Message {
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo      Message?     @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]    @relation("MessageReply")
 
   @@index([conversationId, createdAt])
   @@index([senderId])
+  @@index([replyToId])
   @@map("messages")
 }
 
@@ -682,6 +1088,7 @@ model ContentReport {
   targetUserId String?             @map("target_user_id")
   reason       ContentReportReason
   details      String?
+  evidenceUrl  String?             @map("evidence_url")
   status       ContentReportStatus @default(OPEN)
   adminNotes   String?             @map("admin_notes")
   resolvedById String?             @map("resolved_by_id")
@@ -691,8 +1098,91 @@ model ContentReport {
 
   reporter   User  @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
   targetUser User? @relation("ReportTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+  actions    ModerationAction[]
 
   @@index([status, createdAt])
   @@index([targetType, targetId])
+  @@index([reporterId, createdAt])
   @@map("content_reports")
+}
+
+/// Hide another user's content without blocking (no notification to muted user)
+model UserMute {
+  id        String   @id @default(uuid())
+  muterId   String   @map("muter_id")
+  mutedId   String   @map("muted_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  muter User @relation("MuteActor", fields: [muterId], references: [id], onDelete: Cascade)
+  muted User @relation("MuteTarget", fields: [mutedId], references: [id], onDelete: Cascade)
+
+  @@unique([muterId, mutedId])
+  @@index([mutedId])
+  @@map("user_mutes")
+}
+
+enum ComplaintCategory {
+  TECHNICAL
+  LOGIN
+  BUG
+  STAFF
+  CAMPUS
+  COMMUNITY
+  EVENT
+  FEATURE
+  SAFETY
+  OTHER
+}
+
+enum ComplaintPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ComplaintStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  DISMISSED
+}
+
+model Complaint {
+  id            String            @id @default(uuid())
+  ticketNumber  String            @unique @map("ticket_number")
+  userId        String            @map("user_id")
+  category      ComplaintCategory
+  subject       String
+  description   String
+  attachmentUrl String?           @map("attachment_url")
+  priority      ComplaintPriority @default(MEDIUM)
+  status        ComplaintStatus   @default(OPEN)
+  assignedAdminId String?         @map("assigned_admin_id")
+  adminNotes    String?           @map("admin_notes")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status, priority])
+  @@map("complaints")
+}
+
+model ModerationAction {
+  id        String   @id @default(uuid())
+  reportId  String?  @map("report_id")
+  adminId   String   @map("admin_id")
+  action    String
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  report ContentReport? @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  admin  User           @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([adminId, createdAt])
+  @@map("moderation_actions")
 }

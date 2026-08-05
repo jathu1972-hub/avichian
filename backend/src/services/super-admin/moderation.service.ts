@@ -312,6 +312,30 @@ export async function createCollegeAnnouncement(
     },
   });
 
+  const { createNotification } = await import('../notification.service.js');
+  const students = await prisma.user.findMany({
+    where: {
+      role: 'STUDENT',
+      deletedAt: null,
+      accountStatus: 'ACTIVE',
+      ...(data.visibility === 'ALL' ? {} : { departmentId }),
+      ...(data.year ? { profile: { year: data.year } } : {}),
+    },
+    select: { id: true },
+    take: 2000,
+  });
+  await Promise.all(
+    students.map((s) =>
+      createNotification({
+        userId: s.id,
+        type: 'ANNOUNCEMENT',
+        title: ann.title,
+        body: ann.body.slice(0, 200),
+        data: { announcementId: ann.id },
+      }),
+    ),
+  );
+
   await writeAuditLog({
     userId: adminId,
     action: 'ANNOUNCEMENT_PUBLISHED',
