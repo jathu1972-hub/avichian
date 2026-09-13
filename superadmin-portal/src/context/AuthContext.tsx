@@ -17,6 +17,7 @@ import {
   refreshAccessToken,
   setAccessToken,
   setCsrfToken,
+  SUPER_ADMIN_SESSION_INVALIDATED,
 } from '../lib/api';
 
 interface AuthState {
@@ -111,6 +112,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     bootstrapSession();
   }, [bootstrapSession]);
+
+  // API calls can discover that a browser-held token belongs to a different role.
+  // Reflect that immediately so protected pages return to the correct login screen.
+  useEffect(() => {
+    const handleInvalidSession = () => {
+      flushSync(() => setUser(null));
+    };
+    window.addEventListener(SUPER_ADMIN_SESSION_INVALIDATED, handleInvalidSession);
+    return () => window.removeEventListener(SUPER_ADMIN_SESSION_INVALIDATED, handleInvalidSession);
+  }, []);
 
   const login = useCallback(async (regNo: string, password: string, rememberMe = false) => {
     const res = await api<{

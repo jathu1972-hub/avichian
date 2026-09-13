@@ -127,6 +127,16 @@ async function ensureCsrf(forceRefresh = false): Promise<string> {
 const SA_ACCESS_TOKEN_KEY = 'avichian_sa_access_token';
 /** Legacy key — migrate once then remove so old sessions keep working */
 const LEGACY_ACCESS_TOKEN_KEY = 'avichian_access_token';
+/** Emitted when the API rejects a stored token as not belonging to a Super Admin. */
+export const SUPER_ADMIN_SESSION_INVALIDATED = 'avichian:super-admin-session-invalidated';
+
+function invalidateSuperAdminSession() {
+  setAccessToken(null);
+  clearCsrfToken();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(SUPER_ADMIN_SESSION_INVALIDATED));
+  }
+}
 
 export function setAccessToken(token: string | null) {
   if (token) {
@@ -310,6 +320,17 @@ export async function api<T>(
       setAccessToken(null);
     }
     throw classifyHttpFailure(401, json);
+  }
+
+  // A portal can be left open while its account is changed, restored, or replaced.
+  // Never leave that stale token looking like a usable Super Admin session.
+  if (res.status === 403 && json.code === 'NOT_SUPER_ADMIN') {
+    invalidateSuperAdminSession();
+    throw new ApiClientError(
+      'auth_expired',
+      'Your Super Admin session is no longer valid. Please sign in again.',
+      { status: res.status, code: json.code },
+    );
   }
 
   if (!res.ok) {
