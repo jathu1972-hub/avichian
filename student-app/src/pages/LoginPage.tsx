@@ -54,21 +54,25 @@ export function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-dvh bg-gradient-to-b from-secondary/20 via-background to-background px-safe py-8 sm:py-10 md:py-14">
+    <div className="relative min-h-dvh overflow-hidden px-safe py-8 sm:py-10 md:py-14">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_500px_at_20%_-10%,rgba(16,185,129,0.18),transparent_55%),radial-gradient(700px_400px_at_100%_10%,rgba(6,182,212,0.14),transparent_50%),linear-gradient(180deg,#f8fafc_0%,#ecfdf5_40%,#f8fafc_100%)]" />
       <motion.div
-        initial={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="mx-auto w-full max-w-md min-w-0 space-y-6 sm:space-y-8"
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+        className="relative mx-auto w-full max-w-md min-w-0 space-y-6 sm:space-y-8"
       >
         <div className="text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary text-white shadow-float">
-            <GraduationCap size={32} />
+          <div className="brand-mark mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[1.35rem] text-white">
+            <GraduationCap size={32} strokeWidth={1.75} />
           </div>
-          <h1 className="font-display text-3xl font-bold text-slate-900">AVICHIAN</h1>
-          <p className="mt-2 text-sm text-slate-500">Private campus app · Students &amp; Staff</p>
+          <h1 className="font-display text-3xl font-extrabold tracking-tight">
+            <span className="gradient-text">AVICHIAN</span>
+          </h1>
+          <p className="mt-2 text-sm font-medium text-slate-500">Private campus · Students &amp; Staff</p>
         </div>
 
-        <GlassCard>
+        <GlassCard elevated>
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               label="Register Number or College Email"

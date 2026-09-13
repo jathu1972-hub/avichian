@@ -2,11 +2,14 @@ import { Calendar, ChevronRight, Sparkles, Users } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { FeedSkeleton } from '../../components/ui/Skeleton';
 import { PostCard } from '../../components/student/PostCard';
 import { StoriesStrip } from '../../components/student/StoriesStrip';
 import { StoryViewer } from '../../components/student/StoryViewer';
 import { api } from '../../lib/api';
 import { fetchFeed, fetchStories, toggleLike } from '../../lib/social';
+import { connectSocket } from '../../lib/socket';
 import type { FeedPost, StoryGroup } from '../../types/social';
 
 interface CampusHome {
@@ -106,6 +109,36 @@ export function FeedPage() {
     return () => window.removeEventListener('focus', onFocus);
   }, [loadStories]);
 
+  // Real-time story delete (self + peers)
+  useEffect(() => {
+    const socket = connectSocket();
+    function onStoryDeleted(payload: { storyId?: string; userId?: string }) {
+      const storyId = payload?.storyId;
+      const userId = payload?.userId;
+      if (!storyId) return;
+      setStories((prev) =>
+        prev
+          .map((g) =>
+            userId && g.user.id !== userId
+              ? g
+              : { ...g, stories: g.stories.filter((s) => s.id !== storyId) },
+          )
+          .filter((g) => g.stories.length > 0),
+      );
+      setActiveStory((cur) => {
+        if (!cur) return cur;
+        if (userId && cur.user.id !== userId) return cur;
+        const nextStories = cur.stories.filter((s) => s.id !== storyId);
+        if (nextStories.length === 0) return null;
+        return { ...cur, stories: nextStories };
+      });
+    }
+    socket.on('story:deleted', onStoryDeleted);
+    return () => {
+      socket.off('story:deleted', onStoryDeleted);
+    };
+  }, []);
+
   useEffect(() => {
     if (!toast) return;
     const t = window.setTimeout(() => setToast(''), 2800);
@@ -143,15 +176,18 @@ export function FeedPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-16">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary/20 border-t-primary" />
-      </div>
-    );
+    return <FeedSkeleton />;
   }
 
   const feedColumn = (
     <div className="mx-auto w-full max-w-xl min-w-0 space-y-4 sm:space-y-5">
+      <div className="px-0.5">
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary/80">Campus feed</p>
+        <h1 className="font-display text-fluid-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+          For you
+        </h1>
+      </div>
+
       <StoriesStrip groups={stories} loading={storiesLoading} onOpenStory={setActiveStory} />
 
       {campus && (campus.pendingFriendRequests > 0 || campus.upcomingEvents.length > 0) ? (
@@ -159,14 +195,14 @@ export function FeedPage() {
           {campus.pendingFriendRequests > 0 ? (
             <Link
               to="/home/friends"
-              className="glass-card flex w-full min-w-0 items-center gap-3 rounded-[22px] px-3 py-3 shadow-soft transition hover:bg-white/90 sm:px-4"
+              className="premium-card flex w-full min-w-0 items-center gap-3 px-3.5 py-3.5 transition hover:scale-[1.01] sm:px-4"
             >
-              <div className="shrink-0 rounded-2xl bg-primary/10 p-2 text-primary">
-                <Users size={18} />
+              <div className="shrink-0 rounded-2xl bg-primary/12 p-2.5 text-primary">
+                <Users size={18} strokeWidth={2} />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-slate-900">Friend requests</p>
-                <p className="text-xs text-slate-500">{campus.pendingFriendRequests} pending</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">Friend requests</p>
+                <p className="text-xs font-medium text-slate-500">{campus.pendingFriendRequests} pending</p>
               </div>
               <ChevronRight size={16} className="shrink-0 text-slate-400" />
             </Link>
@@ -174,14 +210,16 @@ export function FeedPage() {
           {campus.upcomingEvents[0] ? (
             <Link
               to="/home/events"
-              className="glass-card flex w-full min-w-0 items-center gap-3 rounded-[22px] px-3 py-3 shadow-soft sm:px-4"
+              className="premium-card flex w-full min-w-0 items-center gap-3 px-3.5 py-3.5 sm:px-4"
             >
-              <div className="shrink-0 rounded-2xl bg-accent/15 p-2 text-amber-600">
+              <div className="shrink-0 rounded-2xl bg-accent/15 p-2.5 text-cyan-700 dark:text-cyan-300">
                 <Calendar size={18} />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-slate-900">{campus.upcomingEvents[0].name}</p>
-                <p className="truncate text-xs text-slate-500">
+                <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
+                  {campus.upcomingEvents[0].name}
+                </p>
+                <p className="truncate text-xs font-medium text-slate-500">
                   {new Date(campus.upcomingEvents[0].startsAt).toLocaleString()}
                   {campus.upcomingEvents[0].venue ? ` · ${campus.upcomingEvents[0].venue}` : ''}
                 </p>
@@ -199,40 +237,45 @@ export function FeedPage() {
           { to: '/home/calendar', label: 'Calendar' },
           { to: '/home/friends', label: 'Friends' },
           { to: '/home/chat', label: 'Chat' },
+          { to: '/home/communities', label: 'Communities' },
         ].map((chip) => (
-          <Link
-            key={chip.to}
-            to={chip.to}
-            className="shrink-0 rounded-full bg-white/80 px-3 py-2 text-xs font-medium text-slate-600 shadow-soft ring-1 ring-slate-100"
-          >
+          <Link key={chip.to} to={chip.to} className="chip-pill shrink-0">
             {chip.label}
           </Link>
         ))}
       </div>
 
       {error ? (
-        <p className="break-anywhere rounded-[20px] bg-error/10 px-4 py-3 text-sm text-error">{error}</p>
+        <p className="toast-premium break-anywhere border border-error/20 bg-error/10 text-error">{error}</p>
       ) : null}
       {toast ? (
-        <p className="rounded-[20px] bg-success/10 px-4 py-3 text-sm text-success">{toast}</p>
+        <p className="toast-premium border border-success/20 bg-success/10 text-success">{toast}</p>
       ) : null}
 
       {posts.length === 0 ? (
-        <div className="glass-card rounded-[28px] p-6 text-center shadow-soft sm:p-8">
-          <Sparkles className="mx-auto text-primary" size={28} />
-          <p className="mt-3 font-semibold text-slate-900">Your feed is quiet</p>
-          <p className="mt-1 text-sm text-slate-500">Add friends or create the first post for your campus.</p>
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <Link to="/home/create" className="rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-white">
-              Create post
-            </Link>
-            <Link to="/home/search" className="rounded-full bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700">
-              Find friends
-            </Link>
-          </div>
-        </div>
+        <EmptyState
+          icon={Sparkles}
+          title="Your feed is quiet"
+          description="Add friends or create the first post for your campus."
+          action={
+            <>
+              <Link
+                to="/home/create"
+                className="rounded-full bg-gradient-to-br from-primary to-secondary px-5 py-2.5 text-sm font-bold text-white shadow-float"
+              >
+                Create post
+              </Link>
+              <Link
+                to="/home/search"
+                className="rounded-full bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-soft ring-1 ring-slate-200 dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-700"
+              >
+                Find friends
+              </Link>
+            </>
+          }
+        />
       ) : (
-        <div className="space-y-3 sm:space-y-4">
+        <div className="space-y-3.5 sm:space-y-4">
           {posts.map((post) => (
             <PostCard
               key={post.id}
@@ -262,9 +305,9 @@ export function FeedPage() {
         {/* Left panel — desktop only */}
         <aside className="hidden min-w-0 xl:block">
           <div className="sticky top-24 space-y-3">
-            <div className="glass-card rounded-[24px] p-4 shadow-soft">
-              <p className="text-sm font-semibold text-slate-900">Campus</p>
-              <p className="mt-1 text-xs text-slate-500">Shortcuts stay on the left on large screens.</p>
+            <div className="glass-elevated rounded-[1.5rem] p-4">
+              <p className="text-sm font-extrabold tracking-tight text-slate-900 dark:text-white">Campus</p>
+              <p className="mt-1 text-xs font-medium text-slate-500">Quick links for large screens</p>
               <div className="mt-3 flex flex-col gap-1">
                 {[
                   { to: '/home/friends', label: 'Friends' },
@@ -275,7 +318,7 @@ export function FeedPage() {
                   <Link
                     key={l.to}
                     to={l.to}
-                    className="rounded-xl px-3 py-2 text-sm font-medium text-slate-600 hover:bg-primary/10 hover:text-primary"
+                    className="rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-primary/10 hover:text-primary dark:text-zinc-300"
                   >
                     {l.label}
                   </Link>

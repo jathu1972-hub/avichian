@@ -48,6 +48,7 @@ enum AuditAction {
   MFA_ENABLED
   MFA_VERIFIED
   STUDENT_MASTER_IMPORT
+  BULK_STUDENT_IMPORT
   SESSION_REFRESH
   SESSION_REVOKED
   USER_CREATED
@@ -55,13 +56,13 @@ enum AuditAction {
   USER_SUSPENDED
   USER_ACTIVATED
   USER_DELETED
+  USER_WARNED
   CONTENT_DELETED
   CONTENT_RESTORED
   REPORT_REVIEWED
   REPORT_CLOSED
   ANNOUNCEMENT_PUBLISHED
   EVENT_PUBLISHED
-  USER_WARNED
   CONTENT_ARCHIVED
   CONTENT_REPORTED
 }
@@ -155,6 +156,8 @@ enum NotificationType {
   EVENT
   ANNOUNCEMENT
   MESSAGE
+  SKILL_MATCH_REQUEST
+  SKILL_MATCH_ACCEPTED
 }
 
 enum StudentMasterStatus {
@@ -220,6 +223,7 @@ model Department {
   events        DepartmentEvent[]
   campusEvents  CampusEvent[]
   communities   Community[]
+  importBatches StudentImportBatch[]
 
   @@map("departments")
 }
@@ -517,11 +521,14 @@ model User {
   forcePasswordChange Boolean @default(false) @map("force_password_change")
   /// Alias for college ops: first login / after admin temp password (same as forcePasswordChange)
   verifiedBadge    Boolean   @default(false) @map("verified_badge")
+  /// Super Admin bulk import batch that created this user (if any)
+  importBatchId    String?   @map("import_batch_id")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
   department    Department     @relation(fields: [departmentId], references: [id])
   studentMaster StudentMaster? @relation(fields: [studentMasterId], references: [id])
+  importBatch   StudentImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
   profile       Profile?
   staff         Staff?
   admin         Admin?
@@ -565,11 +572,53 @@ model User {
   mutedByUsers        UserMute[]        @relation("MuteTarget")
   complaints          Complaint[]
   moderationActions   ModerationAction[]
+  /// Super Admins this user created (audit trail)
+  adminsCreated       Admin[]           @relation("AdminCreatedBy")
+  postComments        PostComment[]
+  postCommentLikes    PostCommentLike[]
+  importBatchesCreated StudentImportBatch[] @relation("ImportBatchCreator")
+  skillMatchProfile    SkillMatchProfile?
+  studentSkills        StudentSkill[]
+  skillInterests       SkillInterest[]
+  skillGoals           StudentGoal[]
+  skillAvailabilities  StudentAvailability[]
+  skillMatchSent       SkillMatchRequest[] @relation("SkillMatchSender")
+  skillMatchReceived   SkillMatchRequest[] @relation("SkillMatchReceiver")
 
   @@index([departmentId])
   @@index([role])
   @@index([createdAt])
+  @@index([lastLoginAt])
+  @@index([importBatchId])
+  /// Student search: activated users (ACTIVE + logged in + finished first password change)
+  @@index([role, accountStatus, lastLoginAt, forcePasswordChange])
   @@map("users")
+}
+
+/// Super Admin bulk student import history
+model StudentImportBatch {
+  id             String   @id @default(uuid())
+  createdById    String   @map("created_by_id")
+  departmentId   String   @map("department_id")
+  year           Int
+  section        String?
+  initialPasswordSet Boolean @default(true) @map("initial_password_set")
+  totalRows      Int      @map("total_rows")
+  createdCount   Int      @default(0) @map("created_count")
+  skippedCount   Int      @default(0) @map("skipped_count")
+  failedCount    Int      @default(0) @map("failed_count")
+  status         String   @default("COMPLETED") // COMPLETED | PARTIAL | FAILED
+  errorReport    Json?    @map("error_report")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  createdBy  User       @relation("ImportBatchCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id])
+  students   User[]
+
+  @@index([createdById])
+  @@index([departmentId])
+  @@index([createdAt])
+  @@map("student_import_batches")
 }
 
 /// Per-user app preferences (privacy, notifications, appearance)
@@ -614,6 +663,8 @@ model Profile {
   id              String         @id @default(uuid())
   userId          String         @unique @map("user_id")
   name            String
+  /// Optional display nickname (searchable)
+  nickname        String?
   bio             String?
   year            Int?
   section         String?
@@ -625,6 +676,7 @@ model Profile {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([nickname])
   @@map("profiles")
 }
 
@@ -665,14 +717,29 @@ model Staff {
   @@map("staff")
 }
 
+/// Super Admin profile (1:1 with User where role = SUPER_ADMIN).
+/// Enterprise management fields: username, permissions, root protection, createdBy.
 model Admin {
-  id        String   @id @default(uuid())
-  userId    String   @unique @map("user_id")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(uuid())
+  userId      String   @unique @map("user_id")
+  /// Login username (unique). Root account uses "rootadmin".
+  username    String   @unique
+  /// Optional employee / staff code (display + alternate lookup)
+  employeeId  String?  @map("employee_id")
+  /// Fine-grained portal permissions (JSON object of booleans)
+  permissions Json     @default("{}")
+  /// Protected root Super Admin — cannot be deleted or suspended
+  isRoot      Boolean  @default(false) @map("is_root")
+  /// User who created this Super Admin account
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("AdminCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
+  @@index([isRoot])
+  @@index([createdById])
   @@map("admins")
 }
 
@@ -778,6 +845,7 @@ model Post {
   mediaUrl    String?        @map("media_url")
   mediaMimeType String?      @map("media_mime_type")
   visibility  PostVisibility @default(DEPARTMENT)
+  commentCount Int           @default(0) @map("comment_count")
   isDeleted   Boolean        @default(false) @map("is_deleted")
   deletedAt   DateTime?      @map("deleted_at")
   deletedById String?        @map("deleted_by_id")
@@ -788,6 +856,7 @@ model Post {
   author    User  @relation(fields: [authorId], references: [id], onDelete: Cascade)
   deletedBy User? @relation("PostDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
   likes     PostLike[]
+  comments  PostComment[]
 
   @@index([authorId])
   @@index([createdAt])
@@ -808,6 +877,44 @@ model PostLike {
   @@unique([postId, userId])
   @@index([userId])
   @@map("post_likes")
+}
+
+/// Nested comments on posts (max 2 levels: root + reply)
+model PostComment {
+  id        String   @id @default(uuid())
+  postId    String   @map("post_id")
+  userId    String   @map("user_id")
+  body      String
+  parentId  String?  @map("parent_id")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  isHidden  Boolean  @default(false) @map("is_hidden")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  post    Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent  PostComment?    @relation("PostCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies PostComment[]   @relation("PostCommentReplies")
+  likes   PostCommentLike[]
+
+  @@index([postId, createdAt])
+  @@index([userId])
+  @@index([parentId])
+  @@map("post_comments")
+}
+
+model PostCommentLike {
+  id        String   @id @default(uuid())
+  commentId String   @map("comment_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  comment PostComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([userId])
+  @@map("post_comment_likes")
 }
 
 enum StoryMediaType {
@@ -1008,6 +1115,8 @@ model ConversationMember {
   conversationId String    @map("conversation_id")
   userId         String    @map("user_id")
   lastReadAt     DateTime? @map("last_read_at")
+  /// User-specific hide: conversation removed from this user's chat list only
+  hiddenAt       DateTime? @map("hidden_at")
   joinedAt       DateTime  @default(now()) @map("joined_at")
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -1015,6 +1124,7 @@ model ConversationMember {
 
   @@unique([conversationId, userId])
   @@index([userId])
+  @@index([userId, hiddenAt])
   @@map("conversation_members")
 }
 
@@ -1185,4 +1295,141 @@ model ModerationAction {
   @@index([reportId])
   @@index([adminId, createdAt])
   @@map("moderation_actions")
+}
+
+enum SkillProficiency {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum SkillMatchVisibility {
+  CAMPUS
+  CONNECTED
+  HIDDEN
+}
+
+enum SkillMatchRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+}
+
+model SkillCategory {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  name      String
+  sortOrder Int      @default(0) @map("sort_order")
+  skills    Skill[]
+  @@map("skill_categories")
+}
+
+model Skill {
+  id         String        @id @default(uuid())
+  categoryId String        @map("category_id")
+  slug       String
+  name       String
+  sortOrder  Int           @default(0) @map("sort_order")
+  category   SkillCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  studentSkills  StudentSkill[]
+  interests      SkillInterest[]
+  @@unique([categoryId, slug])
+  @@index([categoryId])
+  @@index([name])
+  @@map("skills")
+}
+
+model SkillMatchProfile {
+  id         String               @id @default(uuid())
+  userId     String               @unique @map("user_id")
+  visibility SkillMatchVisibility @default(CAMPUS)
+  createdAt  DateTime             @default(now()) @map("created_at")
+  updatedAt  DateTime             @updatedAt @map("updated_at")
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("skill_match_profiles")
+}
+
+model StudentSkill {
+  id           String           @id @default(uuid())
+  userId       String           @map("user_id")
+  skillId      String           @map("skill_id")
+  proficiency  SkillProficiency @default(BEGINNER)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill        Skill            @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  @@unique([userId, skillId])
+  @@index([userId])
+  @@index([skillId])
+  @@map("student_skills")
+}
+
+model SkillInterest {
+  id      String @id @default(uuid())
+  userId  String @map("user_id")
+  skillId String @map("skill_id")
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  @@unique([userId, skillId])
+  @@index([userId])
+  @@map("skill_interests")
+}
+
+model SkillGoalCatalog {
+  id        String         @id @default(uuid())
+  slug      String         @unique
+  label     String
+  sortOrder Int            @default(0) @map("sort_order")
+  goals     StudentGoal[]
+  @@map("skill_goal_catalog")
+}
+
+model StudentGoal {
+  id     String           @id @default(uuid())
+  userId String           @map("user_id")
+  goalId String           @map("goal_id")
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal   SkillGoalCatalog @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  @@unique([userId, goalId])
+  @@index([userId])
+  @@map("student_goals")
+}
+
+model SkillAvailabilityCatalog {
+  id            String               @id @default(uuid())
+  slug          String               @unique
+  label         String
+  sortOrder     Int                  @default(0) @map("sort_order")
+  availabilities StudentAvailability[]
+  @@map("skill_availability_catalog")
+}
+
+model StudentAvailability {
+  id     String                     @id @default(uuid())
+  userId String                     @map("user_id")
+  availId String                    @map("avail_id")
+  user   User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  avail  SkillAvailabilityCatalog   @relation(fields: [availId], references: [id], onDelete: Cascade)
+  @@unique([userId, availId])
+  @@index([userId])
+  @@map("student_availabilities")
+}
+
+/// Skill Match connect request. Accept also creates an ACCEPTED FriendRequest
+/// so Message/Call use the existing chat/call systems.
+model SkillMatchRequest {
+  id         String                   @id @default(uuid())
+  senderId   String                   @map("sender_id")
+  receiverId String                   @map("receiver_id")
+  status     SkillMatchRequestStatus  @default(PENDING)
+  matchScore Int                      @map("match_score")
+  reasons    Json
+  createdAt  DateTime                 @default(now()) @map("created_at")
+  updatedAt  DateTime                 @updatedAt @map("updated_at")
+  sender     User                     @relation("SkillMatchSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver   User                     @relation("SkillMatchReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  @@unique([senderId, receiverId])
+  @@index([receiverId, status])
+  @@index([senderId, status])
+  @@map("skill_match_requests")
 }

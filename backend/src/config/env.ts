@@ -167,28 +167,53 @@ export const env = {
   livekitApiSecret: process.env.LIVEKIT_API_SECRET || undefined,
 };
 
+const TEMP_TUNNEL_HOST_RE =
+  /trycloudflare\.com|ngrok(\.io|\.app|\.dev)?|localhost\.run|loca\.lt|serveo\.net|cloudflared|127\.0\.0\.1|0\.0\.0\.0/i;
+
+export function isTemporaryTunnelUrl(url: string): boolean {
+  return TEMP_TUNNEL_HOST_RE.test(url);
+}
+
 /** Soft production guardrails (log only — do not crash after secrets already loaded). */
 export function logProductionWarnings(): void {
   if (!isProduction) return;
   const warnings: string[] = [];
-  if (frontendUrls.some((u) => u.includes('localhost'))) {
-    warnings.push('FRONTEND_URLS/CORS_ORIGIN still includes localhost — Netlify origins will be blocked if missing.');
+  if (frontendUrls.some((u) => u.includes('localhost') || isTemporaryTunnelUrl(u))) {
+    warnings.push(
+      'FRONTEND_URLS still includes localhost or temporary tunnel hosts — remove them in production.',
+    );
   }
-  if (!env.publicApiUrl.startsWith('https://') && !env.publicApiUrl.includes('localhost')) {
-    warnings.push('PUBLIC_API_URL should be https://api.avichian.com (or your API host) in production.');
+  if (isTemporaryTunnelUrl(env.publicApiUrl) || env.publicApiUrl.includes('localhost')) {
+    warnings.push(
+      'PUBLIC_API_URL must be the permanent HTTPS API host (not localhost / ngrok / Cloudflare Tunnel).',
+    );
+  }
+  if (!env.publicApiUrl.startsWith('https://')) {
+    warnings.push('PUBLIC_API_URL should use https:// in production.');
   }
   if (
-    !frontendUrls.some((u) => u.includes('app.avichian') || u.includes('netlify.app')) &&
+    !frontendUrls.some(
+      (u) =>
+        u.includes('app.avichian') ||
+        u.includes('admin.avichian') ||
+        u.includes('netlify.app') ||
+        u.includes('github.io'),
+    ) &&
     frontendUrls.every((u) => u.includes('localhost'))
   ) {
     warnings.push(
-      'FRONTEND_URLS / FRONTEND_URL / ADMIN_URL look like localhost only — Netlify SPAs will be blocked by CORS.',
+      'FRONTEND_URLS / FRONTEND_URL / ADMIN_URL look like localhost only — SPAs will be blocked by CORS.',
+    );
+  }
+  if (!isR2FullyConfigured()) {
+    warnings.push(
+      'Cloudflare R2 not fully configured — uploads fall back to local disk (use a volume or set R2_*).',
     );
   }
   const r2Partial =
     env.r2AccessKeyId || env.r2SecretAccessKey || env.r2BucketName || env.r2AccountId;
   if (r2Partial && !isR2FullyConfigured()) {
-    warnings.push('R2 env is incomplete — set R2_ACCOUNT_ID, keys, bucket, and R2_PUBLIC_URL (or use local uploads).');
+    warnings.push('R2 env is incomplete — set R2_ACCOUNT_ID, keys, bucket, and R2_PUBLIC_URL.');
   }
   if (env.jwtAccessSecret.length < 32 || env.jwtRefreshSecret.length < 32) {
     warnings.push('JWT secrets should be at least 32 characters.');

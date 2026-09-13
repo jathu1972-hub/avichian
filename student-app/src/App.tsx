@@ -66,6 +66,9 @@ const NotificationsPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import('./pages/student/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 );
+const AboutPage = lazy(() =>
+  import('./pages/student/AboutPage').then((m) => ({ default: m.AboutPage })),
+);
 const ComplaintsPage = lazy(() =>
   import('./pages/student/ComplaintsPage').then((m) => ({ default: m.ComplaintsPage })),
 );
@@ -74,6 +77,15 @@ const StaffToolsPage = lazy(() =>
 );
 const ReelsPage = lazy(() =>
   import('./pages/student/ReelsPage').then((m) => ({ default: m.ReelsPage })),
+);
+const SkillMatchPage = lazy(() =>
+  import('./pages/student/SkillMatchPage').then((m) => ({ default: m.SkillMatchPage })),
+);
+const SkillMatchSetupPage = lazy(() =>
+  import('./pages/student/SkillMatchSetupPage').then((m) => ({ default: m.SkillMatchSetupPage })),
+);
+const SkillMatchPersonPage = lazy(() =>
+  import('./pages/student/SkillMatchPersonPage').then((m) => ({ default: m.SkillMatchPersonPage })),
 );
 
 function PageFallback() {
@@ -186,6 +198,9 @@ export default function App() {
             <Route path="create/:kind" element={<Suspense fallback={<PageFallback />}><CreatePostPage /></Suspense>} />
             <Route path="reels" element={<Suspense fallback={<PageFallback />}><ReelsPage /></Suspense>} />
             <Route path="friends" element={<Suspense fallback={<PageFallback />}><FriendsPage /></Suspense>} />
+            <Route path="skill-match" element={<Suspense fallback={<PageFallback />}><SkillMatchPage /></Suspense>} />
+            <Route path="skill-match/me" element={<Suspense fallback={<PageFallback />}><SkillMatchSetupPage /></Suspense>} />
+            <Route path="skill-match/:userId" element={<Suspense fallback={<PageFallback />}><SkillMatchPersonPage /></Suspense>} />
             <Route path="chat" element={<Suspense fallback={<PageFallback />}><ChatPage /></Suspense>} />
             <Route path="chat/:userId" element={<Suspense fallback={<PageFallback />}><ConversationPage /></Suspense>} />
             <Route path="call/voice/:userId" element={<LazyCall mode="voice" />} />
@@ -197,6 +212,7 @@ export default function App() {
             <Route path="notifications" element={<Suspense fallback={<PageFallback />}><NotificationsPage /></Suspense>} />
             <Route path="profile" element={<Suspense fallback={<PageFallback />}><ProfilePage /></Suspense>} />
             <Route path="settings" element={<Suspense fallback={<PageFallback />}><SettingsPage /></Suspense>} />
+            <Route path="about" element={<Suspense fallback={<PageFallback />}><AboutPage /></Suspense>} />
             <Route path="complaints" element={<Suspense fallback={<PageFallback />}><ComplaintsPage /></Suspense>} />
             <Route path="staff-tools" element={<Suspense fallback={<PageFallback />}><StaffToolsPage /></Suspense>} />
             <Route path="user/:userId" element={<Suspense fallback={<PageFallback />}><UserProfilePage /></Suspense>} />

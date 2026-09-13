@@ -30,6 +30,17 @@ searchRouter.get('/', async (req: AuthRequest, res, next) => {
       typeof req.query.limit === 'string' && Number(req.query.limit)
         ? Number(req.query.limit)
         : 24;
+    const friendsOnly =
+      req.query.friendsOnly === '1' ||
+      req.query.friendsOnly === 'true' ||
+      req.query.friends === '1';
+    const onlineOnly =
+      req.query.onlineOnly === '1' ||
+      req.query.onlineOnly === 'true' ||
+      req.query.online === '1';
+    const registeredOnly = !(
+      req.query.registeredOnly === '0' || req.query.registeredOnly === 'false'
+    );
 
     const data = await unifiedSearch(req.user!.id, {
       q,
@@ -38,6 +49,9 @@ searchRouter.get('/', async (req: AuthRequest, res, next) => {
       year,
       sort,
       limit,
+      friendsOnly,
+      onlineOnly,
+      registeredOnly,
     });
     res.json({ success: true, data });
   } catch (error) {
@@ -57,7 +71,16 @@ searchRouter.get('/students', async (req: AuthRequest, res, next) => {
         ? Number(req.query.year)
         : undefined;
     const sort = typeof req.query.sort === 'string' ? req.query.sort : 'az';
-    const results = await searchStudents(req.user!.id, q, 30, { department, year, sort });
+    const friendsOnly = req.query.friendsOnly === '1' || req.query.friendsOnly === 'true';
+    const onlineOnly = req.query.onlineOnly === '1' || req.query.onlineOnly === 'true';
+    const results = await searchStudents(req.user!.id, q, 30, {
+      department,
+      year,
+      sort,
+      registeredOnly: true,
+      friendsOnly,
+      onlineOnly,
+    });
     res.json({ success: true, data: results });
   } catch (error) {
     next(error);

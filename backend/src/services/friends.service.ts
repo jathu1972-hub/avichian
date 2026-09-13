@@ -26,10 +26,17 @@ export async function sendFriendRequest(senderId: string, receiverId: string) {
   }
 
   const receiver = await prisma.user.findFirst({
-    where: { id: receiverId, role: 'STUDENT', deletedAt: null },
+    where: {
+      id: receiverId,
+      role: { in: ['STUDENT', 'STAFF'] },
+      deletedAt: null,
+      accountStatus: 'ACTIVE',
+      lastLoginAt: { not: null },
+      forcePasswordChange: false,
+    },
   });
   if (!receiver) {
-    throw new AppError(404, 'Student not found');
+    throw new AppError(404, 'User not found or has not activated AVICHIAN yet');
   }
 
   if (await isBlockedEitherWay(senderId, receiverId)) {
@@ -382,6 +389,18 @@ export async function isBlockedEitherWay(a: string, b: string): Promise<boolean>
     },
   });
   return Boolean(row);
+}
+
+/** All user IDs that have a BLOCKED relationship with viewer (either direction). */
+export async function getBlockedPeerIds(userId: string): Promise<string[]> {
+  const rows = await prisma.friendRequest.findMany({
+    where: {
+      status: FriendRequestStatus.BLOCKED,
+      OR: [{ senderId: userId }, { receiverId: userId }],
+    },
+    select: { senderId: true, receiverId: true },
+  });
+  return rows.map((r) => (r.senderId === userId ? r.receiverId : r.senderId));
 }
 
 export async function listPendingRequests(userId: string) {

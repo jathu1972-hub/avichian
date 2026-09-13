@@ -1,22 +1,22 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #2563eb;
-  --color-secondary: #60a5fa;
-  --color-accent: #fbbf24;
+  --color-primary: #059669;
+  --color-secondary: #0c4a6e;
+  --color-accent: #06b6d4;
   --color-success: #22c55e;
   --color-error: #ef4444;
   --color-warning: #f59e0b;
-  --color-background: #f8fafc;
+  --color-background: #0f172a;
   --color-background-dark: #0f172a;
-  --color-card: #ffffff;
+  --color-card: #1e293b;
   --font-sans: "Inter", system-ui, sans-serif;
   --font-display: "Poppins", "Inter", system-ui, sans-serif;
   --radius-button: 22px;
   --radius-card: 28px;
   --radius-input: 20px;
-  --shadow-soft: 0 8px 30px rgba(0, 0, 0, 0.08);
-  --shadow-float: 0 20px 40px rgba(37, 99, 235, 0.12);
+  --shadow-soft: 0 8px 30px rgba(0, 0, 0, 0.35);
+  --shadow-float: 0 20px 40px rgba(5, 150, 105, 0.18);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
@@ -42,6 +42,8 @@ html {
   overflow-x: clip;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  color-scheme: dark only;
+  background: #0f172a;
 }
 
 body {
@@ -51,8 +53,8 @@ body {
   margin: 0;
   padding: 0;
   font-family: var(--font-sans);
-  background: var(--color-background);
-  color: #0f172a;
+  background: #0f172a;
+  color: #e2e8f0;
   line-height: 1.5;
   overflow-x: clip;
   overflow-y: auto;
@@ -69,6 +71,7 @@ body {
   overflow-y: visible;
   display: flex;
   flex-direction: column;
+  background: #0f172a;
 }
 
 img,
@@ -87,14 +90,16 @@ select {
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.65);
+  background: rgba(30, 41, 59, 0.85);
   backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(22px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  color: #e2e8f0;
 }
 
+/* Always dark — Tailwind dark: variants */
 .dark {
-  color-scheme: dark;
+  color-scheme: dark only;
 }
 
 .dark body {
@@ -103,8 +108,23 @@ select {
 }
 
 .dark .glass-card {
-  background: rgba(15, 23, 42, 0.75);
+  background: rgba(15, 23, 42, 0.85);
   border: 1px solid rgba(148, 163, 184, 0.12);
+  color: #e2e8f0;
+}
+
+input,
+textarea,
+select {
+  color: #f8fafc;
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #94a3b8;
+  opacity: 1;
 }
 
 .touch-target {
@@ -138,6 +158,8 @@ select {
   flex-direction: column;
   flex: 1 0 auto;
   overflow: visible;
+  background: #0f172a;
+  color: #e2e8f0;
 }
 
 .admin-main {
@@ -146,7 +168,6 @@ select {
   margin-inline: auto;
   flex: 1 0 auto;
   overflow: visible;
-  /* Safe bottom space for mobile home indicator */
   padding-bottom: max(1.25rem, calc(0.75rem + var(--safe-bottom)));
 }
 
@@ -216,4 +237,29 @@ select {
   max-height: min(90dvh, 40rem);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Readable contrast for common light-oriented utility classes under always-dark */
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700 {
+  color: #f8fafc !important;
+}
+
+.dark .text-slate-600,
+.dark .text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+.dark .bg-white {
+  background-color: #1e293b !important;
+}
+
+.dark .bg-slate-50 {
+  background-color: #1e293b !important;
+}
+
+.dark .border-slate-100,
+.dark .border-slate-200 {
+  border-color: #334155 !important;
 }

@@ -19,11 +19,15 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { StudentAvatar } from '../../components/student/StudentAvatar';
 import { useAuth } from '../../context/AuthContext';
 import { resolveMediaUrl } from '../../lib/config';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { ReportDialog } from '../../components/student/ReportDialog';
 import {
+  blockConversationPeer,
   deleteChatMessage,
   editChatMessage,
   fetchConversations,
   fetchMessages,
+  hideConversation,
   markChatRead,
   sendChatMessage,
   startCall,
@@ -97,6 +101,10 @@ export function ConversationPage() {
   const [uploading, setUploading] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmDeleteChat, setConfirmDeleteChat] = useState(false);
+  const [confirmBlock, setConfirmBlock] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -497,7 +505,7 @@ export function ConversationPage() {
           <p className="truncate font-display text-[15px] font-semibold text-slate-900 dark:text-white">
             {peer?.name ?? 'Chat'}
           </p>
-          <p className="flex items-center gap-1.5 text-[11px] text-slate-500">
+          <p className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-zinc-400">
             {typing ? (
               <span className="font-medium text-primary">typing…</span>
             ) : peer?.online ? (
@@ -537,14 +545,44 @@ export function ConversationPage() {
             <MoreVertical size={18} />
           </button>
           {menuOpen ? (
-            <div className="absolute right-0 top-11 z-30 min-w-[140px] rounded-2xl border border-slate-100 bg-white/95 p-1 shadow-float backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95">
+            <div className="absolute right-0 top-11 z-30 min-w-[160px] rounded-2xl border border-slate-200 bg-white p-1 shadow-float dark:border-zinc-700 dark:bg-zinc-900">
               <Link
                 to={peer?.id ? `/home/user/${peer.id}` : '/home/chat'}
-                className="block rounded-xl px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                className="block rounded-xl px-3 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
                 onClick={() => setMenuOpen(false)}
               >
                 View profile
               </Link>
+              <button
+                type="button"
+                className="block w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium text-error hover:bg-error/10"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setConfirmDeleteChat(true);
+                }}
+              >
+                Delete Chat
+              </button>
+              <button
+                type="button"
+                className="block w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setConfirmBlock(true);
+                }}
+              >
+                Block User
+              </button>
+              <button
+                type="button"
+                className="block w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setReportOpen(true);
+                }}
+              >
+                Report User
+              </button>
             </div>
           ) : null}
         </div>
@@ -617,10 +655,8 @@ export function ConversationPage() {
                   >
                     <div
                       className={[
-                        'rounded-[22px] px-3.5 py-2.5 shadow-sm',
-                        mine
-                          ? 'rounded-br-md bg-gradient-to-br from-primary to-blue-600 text-white'
-                          : 'rounded-bl-md border border-white/60 bg-white/85 text-slate-800 backdrop-blur-md dark:border-slate-600/50 dark:bg-slate-800/90 dark:text-slate-100',
+                        'px-3.5 py-2.5',
+                        mine ? 'bubble-mine' : 'bubble-theirs',
                         m.failed ? 'ring-2 ring-error/50' : '',
                       ].join(' ')}
                     >
@@ -816,13 +852,68 @@ export function ConversationPage() {
             whileTap={{ scale: 0.92 }}
             disabled={sending || !text.trim()}
             onClick={() => void send()}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-blue-600 text-white shadow-float transition disabled:opacity-40"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-secondary text-white shadow-float transition disabled:opacity-40"
             aria-label="Send"
           >
             <Send size={18} />
           </motion.button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmDeleteChat}
+        title="Delete this conversation?"
+        message="This removes the conversation from your chat list only. Your friend will still see it."
+        confirmLabel="Delete"
+        loading={actionBusy}
+        onCancel={() => setConfirmDeleteChat(false)}
+        onConfirm={() => {
+          void (async () => {
+            setActionBusy(true);
+            try {
+              await hideConversation(conversationId);
+              navigate('/home/chat', { replace: true });
+            } catch (e) {
+              setError(e instanceof Error ? e.message : 'Could not delete chat');
+            } finally {
+              setActionBusy(false);
+              setConfirmDeleteChat(false);
+            }
+          })();
+        }}
+      />
+      <ConfirmDialog
+        open={confirmBlock}
+        title="Block this person?"
+        message="They cannot message or call you. The chat will be removed from your list."
+        confirmLabel="Block"
+        loading={actionBusy}
+        onCancel={() => setConfirmBlock(false)}
+        onConfirm={() => {
+          void (async () => {
+            setActionBusy(true);
+            try {
+              await blockConversationPeer(conversationId);
+              navigate('/home/chat', { replace: true });
+            } catch (e) {
+              setError(e instanceof Error ? e.message : 'Could not block');
+            } finally {
+              setActionBusy(false);
+              setConfirmBlock(false);
+            }
+          })();
+        }}
+      />
+      {peer?.id ? (
+        <ReportDialog
+          open={reportOpen}
+          onClose={() => setReportOpen(false)}
+          targetType="USER"
+          targetId={peer.id}
+          targetUserId={peer.id}
+          onDone={() => setReportOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

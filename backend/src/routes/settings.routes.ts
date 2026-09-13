@@ -16,7 +16,7 @@ import {
 } from '../services/settings.service.js';
 
 export const settingsRouter = Router();
-settingsRouter.use(authenticate, requireRoles('STUDENT', 'STAFF'));
+settingsRouter.use(authenticate, requireRoles('STUDENT', 'STAFF', 'SUPER_ADMIN'));
 // Password change allowed while forcePasswordChange; other settings gated
 settingsRouter.use((req, res, next) => {
   if (req.path === '/security/password' && req.method === 'PUT') {

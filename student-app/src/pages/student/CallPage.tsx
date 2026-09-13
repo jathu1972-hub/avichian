@@ -762,20 +762,56 @@ export function CallPage({ mode }: { mode: 'voice' | 'video' }) {
             }
           }
         });
-        setQuality(qualityFromStats(rtt, loss));
+        const q = qualityFromStats(rtt, loss);
+        setQuality(
+          rtt != null
+            ? `${q} · ${Math.round(rtt)}ms${loss != null ? ` · ${Math.round(loss * 100)}% loss` : ''}`
+            : q,
+        );
       } catch {
         /* ignore */
       }
     }, 3000);
 
+    // Signaling heartbeat — keeps call channel alive indefinitely (no media duration cap)
+    const pingTimer = window.setInterval(() => {
+      if (endedRef.current || !peerId) return;
+      try {
+        socket.emit('call:ping', { toUserId: peerId, callId: callId ?? undefined });
+      } catch {
+        /* ignore */
+      }
+      // Recover ICE after network switch while connected
+      const pc = pcRef.current;
+      if (
+        pc &&
+        connectedRef.current &&
+        (pc.iceConnectionState === 'disconnected' || pc.connectionState === 'disconnected')
+      ) {
+        try {
+          pc.restartIce();
+          setStatus('Reconnecting…');
+        } catch {
+          /* ignore */
+        }
+      }
+    }, 5000);
+
+    function onPong() {
+      /* peer signaling path alive */
+    }
+    socket.on('call:pong', onPong);
+
     return () => {
       cancelled = true;
       if (ringTimer) window.clearTimeout(ringTimer);
       window.clearInterval(statsTimer);
+      window.clearInterval(pingTimer);
       socket.off('call:signal', onSignal);
       socket.off('callAccepted', onAccepted);
       socket.off('callEnded', onEnded);
       socket.off('callRejected', onRejected);
+      socket.off('call:pong', onPong);
       if (!endedRef.current) {
         emitSignal({ type: 'hangup', reason: 'left' });
         cleanupMedia();

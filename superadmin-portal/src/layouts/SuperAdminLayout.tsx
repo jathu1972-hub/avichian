@@ -13,11 +13,9 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  Moon,
   Search,
   Settings,
   Shield,
-  Sun,
   Users,
   UsersRound,
   X,
@@ -40,6 +38,7 @@ const navItems = [
   { to: '/communities', icon: UsersRound, label: 'Communities' },
   { to: '/reports', icon: Flag, label: 'Reports' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+  { to: '/super-admins', icon: Shield, label: 'Super Admins' },
   { to: '/audit-logs', icon: Activity, label: 'Audit Logs' },
   { to: '/settings', icon: Settings, label: 'Settings' },
   { to: '/health', icon: Database, label: 'System Health' },
@@ -49,16 +48,16 @@ export function SuperAdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [dark, setDark] = useState(() => localStorage.getItem('sa-theme') === 'dark');
   const [search, setSearch] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sa-sidebar') === 'collapsed');
   const [mobileSearch, setMobileSearch] = useState(false);
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
-    localStorage.setItem('sa-theme', dark ? 'dark' : 'light');
-  }, [dark]);
+    // Dark-mode only — never follow system light theme
+    document.documentElement.classList.add('dark');
+    localStorage.setItem('sa-theme', 'dark');
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('sa-sidebar', collapsed ? 'collapsed' : 'expanded');
@@ -83,13 +82,8 @@ export function SuperAdminLayout() {
     setMobileSearch(false);
   }
 
-  const shell = dark
-    ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white'
-    : 'bg-gradient-to-br from-slate-50 via-white to-blue-50/30 text-slate-900';
-
-  const sidebar = dark
-    ? 'bg-slate-900/90 border-slate-700/50 text-slate-200'
-    : 'bg-white/80 border-white/40 text-slate-700';
+  const shell = 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white';
+  const sidebar = 'bg-slate-900/90 border-slate-700/50 text-slate-200';
 
   const sidebarWidth = collapsed ? 'lg:w-[4.5rem]' : 'lg:w-64';
   const mainPad = collapsed ? 'lg:pl-[4.5rem]' : 'lg:pl-64';
@@ -169,9 +163,7 @@ export function SuperAdminLayout() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search students, staff…"
-                  className={`min-h-11 w-full rounded-[20px] py-2.5 pl-10 pr-4 text-sm outline-none sm:pl-11 ${
-                    dark ? 'bg-slate-800 text-white' : 'bg-white/90'
-                  }`}
+                  className="min-h-11 w-full rounded-[20px] bg-slate-800 py-2.5 pl-10 pr-4 text-sm text-white outline-none placeholder:text-slate-400 sm:pl-11"
                 />
               </form>
 
@@ -185,17 +177,9 @@ export function SuperAdminLayout() {
               </button>
 
               <div className="ml-auto flex items-center gap-1 sm:gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDark(!dark)}
-                  className="touch-target flex items-center justify-center rounded-xl hover:bg-primary/10"
-                  aria-label="Toggle theme"
-                >
-                  {dark ? <Sun size={20} /> : <Moon size={20} />}
-                </button>
                 <div className="hidden min-w-0 text-right md:block">
-                  <p className="truncate text-sm font-semibold">{user?.name}</p>
-                  <p className="truncate text-xs opacity-60">{user?.email}</p>
+                  <p className="truncate text-sm font-semibold text-white">{user?.name}</p>
+                  <p className="truncate text-xs text-slate-400">{user?.email}</p>
                 </div>
               </div>
             </div>
@@ -206,9 +190,7 @@ export function SuperAdminLayout() {
                   onChange={(e) => setSearch(e.target.value)}
                   autoFocus
                   placeholder="Search…"
-                  className={`min-h-11 w-full rounded-[20px] px-4 text-sm outline-none ${
-                    dark ? 'bg-slate-800 text-white' : 'bg-white'
-                  }`}
+                  className="min-h-11 w-full rounded-[20px] bg-slate-800 px-4 text-sm text-white outline-none placeholder:text-slate-400"
                 />
               </form>
             ) : null}

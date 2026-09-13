@@ -17,9 +17,18 @@ import { AppError } from '../../utils/errors.js';
 import { writeAuditLog } from '../audit.service.js';
 import { env } from '../../config/env.js';
 
+export type StudentListStatus =
+  | 'ACTIVE'
+  | 'SUSPENDED'
+  | 'NEVER_LOGGED_IN'
+  | 'NOT_ACTIVATED'
+  | 'ALL';
+
 export async function listStudents(params: {
   search?: string;
   departmentId?: string;
+  year?: number;
+  status?: StudentListStatus;
   page?: number;
   limit?: number;
 }) {
@@ -27,11 +36,25 @@ export async function listStudents(params: {
   const limit = Math.min(params.limit ?? 25, 100);
   const skip = (page - 1) * limit;
   const search = params.search?.trim();
+  const status = params.status ?? 'ALL';
+
+  const statusWhere =
+    status === 'ACTIVE'
+      ? { accountStatus: 'ACTIVE' as const, lastLoginAt: { not: null } }
+      : status === 'SUSPENDED'
+        ? { accountStatus: 'SUSPENDED' as const }
+        : status === 'NEVER_LOGGED_IN'
+          ? { lastLoginAt: null }
+          : status === 'NOT_ACTIVATED'
+            ? { forcePasswordChange: true }
+            : {};
 
   const where = {
     role: 'STUDENT' as const,
     deletedAt: null,
     ...(params.departmentId ? { departmentId: params.departmentId } : {}),
+    ...(params.year ? { profile: { year: params.year } } : {}),
+    ...statusWhere,
     ...(search
       ? {
           OR: [
@@ -72,6 +95,8 @@ export async function listStudents(params: {
       online: u.online,
       lastLoginAt: u.lastLoginAt,
       lastSeen: u.lastSeen,
+      forcePasswordChange: u.forcePasswordChange,
+      neverLoggedIn: !u.lastLoginAt,
       failedLoginCount: u.failedLoginCount,
       lockedUntil: u.lockedUntil,
       lastFailedLoginAt: (u as { lastFailedLoginAt?: Date | null }).lastFailedLoginAt ?? null,
@@ -84,6 +109,74 @@ export async function listStudents(params: {
     page,
     limit,
   };
+}
+
+export async function getStudentManagementStats() {
+  const base = { role: 'STUDENT' as const, deletedAt: null };
+  const [total, active, suspended, neverLoggedIn, mustChangePassword] = await Promise.all([
+    prisma.user.count({ where: base }),
+    prisma.user.count({
+      where: { ...base, accountStatus: 'ACTIVE', lastLoginAt: { not: null } },
+    }),
+    prisma.user.count({ where: { ...base, accountStatus: 'SUSPENDED' } }),
+    prisma.user.count({ where: { ...base, lastLoginAt: null } }),
+    prisma.user.count({ where: { ...base, forcePasswordChange: true } }),
+  ]);
+  return {
+    total,
+    active,
+    suspended,
+    neverLoggedIn,
+    notActivated: mustChangePassword,
+  };
+}
+
+export async function exportStudentsCsv(params: {
+  search?: string;
+  departmentId?: string;
+  year?: number;
+  status?: StudentListStatus;
+}) {
+  const data = await listStudents({
+    ...params,
+    page: 1,
+    limit: 10000,
+  });
+  const header = [
+    'Name',
+    'Roll Number',
+    'Email',
+    'Department',
+    'Year',
+    'Section',
+    'Status',
+    'Force Password Change',
+    'Last Login',
+    'Created At',
+  ];
+  const lines = [header.join(',')];
+  for (const s of data.items) {
+    const row = [
+      csvEscape(s.name),
+      csvEscape(s.regNo),
+      csvEscape(s.email),
+      csvEscape(s.department),
+      s.year ?? '',
+      s.section ?? '',
+      s.status,
+      s.forcePasswordChange ? 'yes' : 'no',
+      s.lastLoginAt ? new Date(s.lastLoginAt).toISOString() : '',
+      s.createdAt ? new Date(s.createdAt).toISOString() : '',
+    ];
+    lines.push(row.join(','));
+  }
+  return lines.join('\n');
+}
+
+function csvEscape(v: string | number | null | undefined): string {
+  const s = String(v ?? '');
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
 }
 
 export async function listMasterStudents(params: {

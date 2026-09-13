@@ -19,10 +19,31 @@ export interface FeedPost {
   visibility: PostVisibility;
   createdAt: string;
   likeCount: number;
+  commentCount?: number;
   likedByMe: boolean;
   isMine: boolean;
   archived?: boolean;
   author: StudentSummary;
+}
+
+export interface PostComment {
+  id: string;
+  body: string;
+  parentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  likeCount: number;
+  replyCount?: number;
+  likedByMe: boolean;
+  isMine: boolean;
+  author: {
+    id: string;
+    regNo: string;
+    name: string;
+    nickname?: string | null;
+    profilePhotoUrl: string | null;
+  };
+  replies?: PostComment[];
 }
 
 export type StoryMediaType = 'IMAGE' | 'VIDEO';
@@ -53,9 +74,16 @@ export interface FriendRequestItem {
 
 export interface SearchResult extends StudentSummary {
   email: string;
+  nickname?: string | null;
   online?: boolean;
+  lastSeen?: string | null;
+  lastLoginAt?: string | null;
+  isRegistered?: boolean;
+  firstLoginCompleted?: boolean;
+  verifiedBadge?: boolean;
   friendshipStatus: 'none' | 'friends' | 'pending_outgoing' | 'pending_incoming';
   mutualFriends?: number;
+  communities?: Array<{ id: string; name: string }>;
 }
 
 export interface StudentProfile extends StudentSummary {

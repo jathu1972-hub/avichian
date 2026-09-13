@@ -8,7 +8,6 @@ import { Input } from '../components/ui/Input';
 import { api } from '../lib/api';
 import type { PublicUser } from '@avichian/shared';
 import { useAuth } from '../context/AuthContext';
-import { getPortalUrls } from '../lib/portal';
 
 export function SuperAdminLoginPage() {
   const { establishSession } = useAuth();
@@ -34,7 +33,15 @@ export function SuperAdminLoginPage() {
         mfaToken?: string;
       }>('/auth/login/super-admin', {
         method: 'POST',
-        body: JSON.stringify({ adminId, email, password, rememberMe }),
+        // Send both the current fields and the legacy identifier so this portal
+        // remains compatible with the deployed API during upgrades.
+        body: JSON.stringify({
+          identifier: adminId.trim() || email.trim(),
+          adminId: adminId.trim(),
+          email: email.trim(),
+          password,
+          rememberMe,
+        }),
       });
 
       const data = res.data!;
@@ -42,7 +49,7 @@ export function SuperAdminLoginPage() {
       if (data.mfaRequired || data.mfaSetupRequired) {
         setError(
           data.mfaSetupRequired
-            ? 'MFA setup is required for this account. Use the MFA setup flow or ask the team lead to disable MFA for first login.'
+            ? 'MFA setup is required for this account.'
             : 'MFA code required. Complete authenticator verification.',
         );
         return;
@@ -59,10 +66,14 @@ export function SuperAdminLoginPage() {
       }
 
       await establishSession(data.accessToken, data.user, data.csrfToken ?? null);
-      navigate('/', { replace: true });
+
+      if (data.user.forcePasswordChange || data.user.isFirstLogin) {
+        navigate('/force-password', { replace: true });
+      } else {
+        navigate('/', { replace: true });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Authentication failed';
-      // Friendlier hint when GitHub Pages cannot reach the PC tunnel
       if (/Failed to fetch|Network error|Cannot reach|Unable to connect/i.test(msg)) {
         setError('Unable to connect to the server. Please try again later.');
       } else {
@@ -104,8 +115,8 @@ export function SuperAdminLoginPage() {
             <Input
               label="Admin ID"
               value={adminId}
-              onChange={(e) => setAdminId(e.target.value.toUpperCase())}
-              placeholder="SA001"
+              onChange={(e) => setAdminId(e.target.value)}
+              placeholder="ADMIN001"
               autoComplete="username"
               required
             />
@@ -114,7 +125,7 @@ export function SuperAdminLoginPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin1@avichian.edu"
+              placeholder="admin@avichi.edu"
               autoComplete="email"
               required
             />
@@ -132,25 +143,17 @@ export function SuperAdminLoginPage() {
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 rounded"
+                className="h-4 w-4 rounded border-slate-300"
               />
-              Remember this device (30 days)
+              Remember me
             </label>
 
-            {error ? (
-              <p className="rounded-[20px] bg-error/10 px-4 py-3 text-sm text-error">{error}</p>
-            ) : null}
+            {error ? <p className="text-sm text-error">{error}</p> : null}
 
-            <Button type="submit" loading={loading}>
-              Access Admin Console
+            <Button type="submit" loading={loading} className="w-full">
+              Sign in
             </Button>
           </form>
-
-          <p className="mt-6 text-center text-sm text-slate-500">
-            <a href={getPortalUrls().app} className="text-primary hover:underline">
-              Open AVICHIAN app
-            </a>
-          </p>
         </GlassCard>
       </motion.div>
     </div>

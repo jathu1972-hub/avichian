@@ -8,17 +8,13 @@ import {
   History,
   Lock,
   LogOut,
-  Moon,
-  Palette,
   Phone,
   Search,
   Shield,
   Smartphone,
-  Sun,
   User,
   X,
   KeyRound,
-  Monitor,
   Volume2,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -32,7 +28,6 @@ import {
   fetchSettings,
   formatBytes,
   logoutAllDevices,
-  updateAppearance,
   updateNotifications,
   updatePrivacy,
 } from '../../lib/settings';
@@ -51,7 +46,6 @@ type SectionId =
   | 'privacy'
   | 'notifications'
   | 'calls'
-  | 'appearance'
   | 'security'
   | 'storage'
   | 'support';
@@ -78,7 +72,7 @@ type SettingsSection = {
   icon: typeof User;
   accent: string;
   rows: SettingsRow[];
-  custom?: 'appearance' | 'storage' | 'calls';
+  custom?: 'storage' | 'calls';
   keywords?: string;
 };
 
@@ -110,7 +104,9 @@ export function SettingsPage() {
     try {
       const bundle = await fetchSettings();
       setData(bundle);
-      applyTheme(bundle.appearance.theme);
+      // App is dark-only — never apply light/system theme from server prefs
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('student-theme', 'dark');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings');
     } finally {
@@ -125,21 +121,6 @@ export function SettingsPage() {
   function flash(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(''), 2400);
-  }
-
-  function applyTheme(theme: string) {
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-      localStorage.setItem('student-theme', 'dark');
-    } else if (theme === 'light') {
-      root.classList.remove('dark');
-      localStorage.setItem('student-theme', 'light');
-    } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      root.classList.toggle('dark', prefersDark);
-      localStorage.setItem('student-theme', 'system');
-    }
   }
 
   async function patchPrivacy(partial: Partial<SettingsBundle['privacy']>) {
@@ -166,22 +147,6 @@ export function SettingsPage() {
     } catch {
       setData((d) => (d ? { ...d, notifications: prev } : d));
       flash('Could not save notification preference');
-    }
-  }
-
-  async function setTheme(theme: string) {
-    if (!data) return;
-    const prev = data.appearance;
-    setData({ ...data, appearance: { ...prev, theme } });
-    applyTheme(theme);
-    try {
-      const next = await updateAppearance({ theme });
-      setData((d) => (d ? { ...d, appearance: next } : d));
-      flash('Appearance saved');
-    } catch {
-      setData((d) => (d ? { ...d, appearance: prev } : d));
-      applyTheme(prev.theme);
-      flash('Could not save appearance');
     }
   }
 
@@ -366,6 +331,12 @@ export function SettingsPage() {
             keywords: 'profile visibility',
           },
           {
+            label: 'Skill Match visibility',
+            desc: 'Who can discover you on Skill Match',
+            to: '/home/skill-match/me',
+            keywords: 'skill match visibility discover',
+          },
+          {
             label: 'Blocked users',
             desc: 'Manage blocked students',
             to: '/home/friends',
@@ -407,14 +378,6 @@ export function SettingsPage() {
         rows: [],
         custom: 'calls' as const,
         keywords: 'ringtone call voice video vibration incoming',
-      },
-      {
-        id: 'appearance' as SectionId,
-        title: 'Appearance',
-        icon: Palette,
-        accent: 'from-pink-500 to-rose-500',
-        rows: [],
-        custom: 'appearance' as const,
       },
       {
         id: 'security' as SectionId,
@@ -480,7 +443,8 @@ export function SettingsPage() {
           {
             label: 'About AVICHIAN',
             desc: 'Private campus platform · Avichi Arts & Science College',
-            keywords: 'about version',
+            to: '/home/about',
+            keywords: 'about version developer jathurshan',
           },
           {
             label: 'Privacy policy',
@@ -554,7 +518,7 @@ export function SettingsPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search settings…"
-          className="min-h-9 w-full bg-transparent text-sm outline-none dark:text-white"
+          className="min-h-9 w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-500 dark:text-zinc-50 dark:placeholder:text-zinc-400"
         />
         {query ? (
           <button type="button" onClick={() => setQuery('')} className="text-slate-400">
@@ -718,36 +682,6 @@ export function SettingsPage() {
                 </div>
               ) : null}
 
-              {section.custom === 'appearance' && data ? (
-                <div className="grid grid-cols-3 gap-2 p-4">
-                  {(
-                    [
-                      { id: 'light', label: 'Light', icon: Sun },
-                      { id: 'dark', label: 'Dark', icon: Moon },
-                      { id: 'system', label: 'System', icon: Monitor },
-                    ] as const
-                  ).map((t) => {
-                    const I = t.icon;
-                    const active = data.appearance.theme === t.id;
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => void setTheme(t.id)}
-                        className={`flex flex-col items-center gap-2 rounded-2xl border px-3 py-4 text-xs font-semibold transition ${
-                          active
-                            ? 'border-primary bg-primary/10 text-primary shadow-soft'
-                            : 'border-slate-200 bg-white/60 text-slate-600 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300'
-                        }`}
-                      >
-                        <I size={18} />
-                        {t.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-
               {section.custom === 'storage' && data ? (
                 <div className="space-y-3 p-4">
                   <div>
@@ -895,8 +829,31 @@ export function SettingsPage() {
         <LogOut size={16} /> Log out
       </button>
 
-      <p className="text-center text-[11px] text-slate-400">
+      {/* About AVICHIAN — premium product credit (not a content watermark) */}
+      <section
+        className="premium-card mt-2 flex flex-col items-center px-5 py-8 text-center"
+        aria-label="About AVICHIAN"
+      >
+        <div className="brand-mark flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-extrabold text-white">
+          A
+        </div>
+        <p className="mt-4 font-display text-base font-extrabold tracking-tight text-zinc-50">
+          AVICHIAN
+        </p>
+        <p className="mt-0.5 text-xs font-medium text-primary">Private Campus Platform</p>
+        <div className="my-5 h-px w-12 bg-zinc-700" aria-hidden />
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+          Designed &amp; Developed by
+        </p>
+        <p className="mt-1.5 text-sm font-bold text-zinc-100">Jathurshan</p>
+        <p className="mt-4 text-[11px] text-zinc-500">Version 1.0.0</p>
+      </section>
+
+      <p className="text-center text-[11px] text-zinc-500">
         Signed in as {user?.regNo} · AVICHIAN campus
+      </p>
+      <p className="pb-2 text-center text-[11px] leading-relaxed text-zinc-500">
+        © 2026 AVICHIAN · Built by Jathurshan
       </p>
 
       <AnimatePresence>

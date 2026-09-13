@@ -769,6 +769,54 @@ export async function toggleReelCommentLike(commentId: string) {
   return res.data!;
 }
 
+export async function editReelComment(commentId: string, body: string) {
+  const res = await api(`/reels/comments/${commentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ body }),
+  });
+  return res.data!;
+}
+
+// ── Post comments ─────────────────────────────────────────
+
+export async function fetchPostComments(postId: string, cursor?: string) {
+  const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+  const res = await api<{
+    items: import('../types/social').PostComment[];
+    nextCursor: string | null;
+    commentCount: number;
+  }>(`/posts/${postId}/comments${q}`);
+  return res.data!;
+}
+
+export async function addPostComment(postId: string, body: string, parentId?: string) {
+  const res = await api<import('../types/social').PostComment>(`/posts/${postId}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({ body, parentId }),
+  });
+  return res.data!;
+}
+
+export async function editPostComment(commentId: string, body: string) {
+  const res = await api<import('../types/social').PostComment>(`/posts/comments/${commentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ body }),
+  });
+  return res.data!;
+}
+
+export async function deletePostComment(commentId: string) {
+  await api(`/posts/comments/${commentId}`, { method: 'DELETE' });
+}
+
+export async function togglePostCommentLike(commentId: string) {
+  const res = await api<{ liked: boolean; likeCount: number }>(
+    `/posts/comments/${commentId}/like`,
+    { method: 'POST' },
+  );
+  return res.data!;
+}
+
 export async function fetchSavedReels() {
   const res = await api<ReelItem[]>('/reels/saved/me');
   return res.data ?? [];
@@ -874,6 +922,19 @@ export async function fetchConversations() {
   return res.data!;
 }
 
+/** Hide conversation from my list only (peer still keeps their chat). */
+export async function hideConversation(conversationId: string) {
+  await api(`/chat/conversations/${conversationId}`, { method: 'DELETE' });
+}
+
+export async function blockConversationPeer(conversationId: string) {
+  const res = await api<{ blocked: boolean; peerId: string }>(
+    `/chat/conversations/${conversationId}/block-peer`,
+    { method: 'POST', body: '{}' },
+  );
+  return res.data!;
+}
+
 export async function fetchMessages(conversationId: string) {
   const res = await api<ChatMessageDto[]>(`/chat/conversations/${conversationId}/messages`);
   return res.data!;
@@ -963,6 +1024,8 @@ export async function unifiedSearch(params: {
   department?: string;
   year?: number;
   sort?: 'az' | 'recent' | 'active';
+  friendsOnly?: boolean;
+  onlineOnly?: boolean;
 }) {
   const q = new URLSearchParams();
   if (params.q) q.set('q', params.q);
@@ -970,6 +1033,8 @@ export async function unifiedSearch(params: {
   if (params.department) q.set('department', params.department);
   if (params.year) q.set('year', String(params.year));
   if (params.sort) q.set('sort', params.sort);
+  if (params.friendsOnly) q.set('friendsOnly', '1');
+  if (params.onlineOnly) q.set('onlineOnly', '1');
   const res = await api<{
     students: SearchResult[];
     communities: Array<{

@@ -920,16 +920,58 @@ export async function loginStaff(
 }
 
 export async function loginSuperAdmin(
-  params: { adminId: string; email: string; password: string; rememberMe?: boolean },
+  params: {
+    adminId?: string;
+    email?: string;
+    username?: string;
+    /** Username, email, or employee/admin ID (preferred single-field login) */
+    identifier?: string;
+    password: string;
+    rememberMe?: boolean;
+  },
   meta: RequestMeta,
 ) {
-  const adminId = normalizeRegNo(params.adminId);
-  const email = normalizeEmail(params.email);
+  const identifier = (params.identifier ?? params.username ?? params.adminId ?? params.email ?? '')
+    .trim()
+    .toLowerCase();
+  const emailHint = params.email ? normalizeEmail(params.email) : '';
+  const adminIdHint = params.adminId ? normalizeRegNo(params.adminId) : '';
 
-  let user = await prisma.user.findFirst({
-    where: { regNo: adminId, deletedAt: null },
-    include: { profile: true, department: true, admin: true },
-  });
+  if (!identifier && !emailHint && !adminIdHint) {
+    throw new AppError(400, 'Username or email is required');
+  }
+  if (!params.password) {
+    throw new AppError(400, 'Password is required');
+  }
+
+  // Resolve Super Admin by username, email, or employee/reg id
+  let user =
+    (identifier
+      ? await prisma.user.findFirst({
+          where: {
+            deletedAt: null,
+            OR: [
+              { admin: { username: identifier } },
+              { email: normalizeEmail(identifier) },
+              { regNo: normalizeRegNo(identifier) },
+              { admin: { employeeId: normalizeRegNo(identifier) } },
+            ],
+          },
+          include: { profile: true, department: true, admin: true },
+        })
+      : null) ??
+    (emailHint
+      ? await prisma.user.findFirst({
+          where: { email: emailHint, deletedAt: null },
+          include: { profile: true, department: true, admin: true },
+        })
+      : null) ??
+    (adminIdHint
+      ? await prisma.user.findFirst({
+          where: { regNo: adminIdHint, deletedAt: null },
+          include: { profile: true, department: true, admin: true },
+        })
+      : null);
 
   // Legacy repair: Admin row present but role stuck as STUDENT
   if (user?.admin && user.role !== 'SUPER_ADMIN') {
@@ -940,9 +982,25 @@ export async function loginSuperAdmin(
     });
   }
 
-  if (!user || user.role !== 'SUPER_ADMIN' || !user.admin || user.email !== email) {
+  // When both adminId + email provided (legacy form), both must match
+  if (
+    user &&
+    adminIdHint &&
+    emailHint &&
+    (user.regNo !== adminIdHint || user.email !== emailHint) &&
+    user.admin?.username !== identifier
+  ) {
+    // Allow if identifier-style login already matched user; only enforce dual-field when both sent without identifier
+    if (!params.identifier && !params.username && params.adminId && params.email) {
+      if (user.regNo !== adminIdHint || user.email !== emailHint) {
+        user = null;
+      }
+    }
+  }
+
+  if (!user || user.role !== 'SUPER_ADMIN' || !user.admin) {
     await recordLoginAttempt({
-      regNo: adminId,
+      regNo: adminIdHint || identifier || emailHint,
       method: 'PASSWORD',
       success: false,
       reason: 'Invalid super admin credentials',
@@ -953,12 +1011,14 @@ export async function loginSuperAdmin(
 
   const account = await prepareAccountForLogin(user);
 
+  const loginId = user.regNo;
+
   try {
     assertAccountActive(account);
   } catch (error) {
     await recordLoginAttempt({
       userId: user.id,
-      regNo: adminId,
+      regNo: loginId,
       method: 'PASSWORD',
       success: false,
       reason: error instanceof AppError ? error.message : 'Account inactive',
@@ -969,7 +1029,7 @@ export async function loginSuperAdmin(
 
   const valid = await verifyPassword(params.password, user.passwordHash);
   if (!valid) {
-    await handleFailedLogin(user.id, adminId, meta);
+    await handleFailedLogin(user.id, loginId, meta);
   }
 
   await clearLoginFailures(user.id);
@@ -981,7 +1041,7 @@ export async function loginSuperAdmin(
 
   await recordLoginAttempt({
     userId: user.id,
-    regNo: adminId,
+    regNo: loginId,
     method: 'PASSWORD',
     success: true,
     meta,
@@ -989,7 +1049,11 @@ export async function loginSuperAdmin(
   await writeAuditLog({
     userId: user.id,
     action: 'LOGIN_SUCCESS',
-    metadata: { method: 'super_admin_password' },
+    metadata: {
+      method: 'super_admin_password',
+      username: user.admin.username,
+      isRoot: user.admin.isRoot,
+    },
     ipAddress: meta.ipAddress,
     userAgent: meta.userAgent,
   });

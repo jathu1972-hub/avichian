@@ -39,6 +39,8 @@ export function ReelsPage() {
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Single reel-viewer mute preference — shared across all reels in this session */
+  const [reelsAudioEnabled, setReelsAudioEnabled] = useState(false);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -243,8 +245,8 @@ export function ReelsPage() {
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
           <Clapperboard size={32} />
         </div>
-        <p className="font-display text-xl font-bold text-slate-900">No reels yet</p>
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="font-display text-xl font-bold text-slate-900 dark:text-zinc-50">No reels yet</p>
+        <p className="mt-2 text-sm text-slate-600 dark:text-zinc-400">
           Upload a short vertical video (MP4 H.264 · max 90s · 100MB). Stored in PostgreSQL + object storage.
         </p>
         <Link
@@ -260,7 +262,7 @@ export function ReelsPage() {
   return (
     <div className="relative mx-auto w-full max-w-lg">
       <div className="mb-2 flex items-center justify-between px-1">
-        <h1 className="font-display text-lg font-bold text-slate-900">Reels</h1>
+        <h1 className="font-display text-lg font-bold text-slate-900 dark:text-zinc-50">Reels</h1>
         <Link
           to="/home/create/reel"
           className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary"
@@ -277,14 +279,20 @@ export function ReelsPage() {
 
       <div
         ref={scrollerRef}
-        className="scroll-region h-[min(calc(100dvh-9.5rem),780px)] max-h-[calc(100dvh-9.5rem)] snap-y snap-mandatory overflow-y-auto overscroll-y-contain rounded-[24px] bg-black shadow-float"
+        className="scroll-region h-[min(calc(100dvh-9.5rem),780px)] max-h-[calc(100dvh-9.5rem)] w-full snap-y snap-mandatory overflow-x-hidden overflow-y-auto overscroll-y-contain rounded-[24px] bg-black shadow-float"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
-        {reels.map((reel) => (
+        {reels.map((reel, idx) => {
+          const activeIdx = reels.findIndex((r) => r.id === activeId);
+          const preload = activeIdx >= 0 && (idx === activeIdx + 1 || idx === activeIdx - 1);
+          return (
           <ReelCard
             key={reel.id}
             reel={reel}
             active={activeId === reel.id}
+            audioEnabled={reelsAudioEnabled}
+            onAudioEnabledChange={setReelsAudioEnabled}
+            preload={preload}
             onLike={handleLike}
             onSave={handleSave}
             onComment={openComments}
@@ -292,7 +300,8 @@ export function ReelsPage() {
             onMenu={setMenuReel}
             onViewed={(id) => void recordReelView(id)}
           />
-        ))}
+          );
+        })}
         {loadingMore ? (
           <div className="flex h-16 items-center justify-center bg-black text-xs text-white/50">
             Loading more…
@@ -307,14 +316,14 @@ export function ReelsPage() {
           onClick={() => setCommentReel(null)}
         >
           <div
-            className="flex max-h-[70dvh] w-full max-w-lg flex-col rounded-t-[28px] bg-white shadow-2xl"
+            className="flex max-h-[70dvh] w-full max-w-lg flex-col rounded-t-[28px] bg-white shadow-2xl dark:bg-zinc-900"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-              <p className="font-semibold text-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-zinc-700">
+              <p className="font-semibold text-slate-900 dark:text-zinc-50">
                 Comments · {commentReel.commentCount ?? comments.length}
               </p>
-              <button type="button" onClick={() => setCommentReel(null)} className="rounded-full p-2 hover:bg-slate-100">
+              <button type="button" onClick={() => setCommentReel(null)} className="rounded-full p-2 text-slate-700 hover:bg-slate-100 dark:text-zinc-200 dark:hover:bg-zinc-800">
                 <X size={18} />
               </button>
             </div>
@@ -370,7 +379,7 @@ export function ReelsPage() {
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
                   placeholder="Add a comment…"
-                  className="min-h-11 flex-1 rounded-full border border-slate-200 px-4 text-sm outline-none focus:border-primary"
+                  className="min-h-11 flex-1 rounded-full border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none placeholder:text-slate-500 focus:border-primary dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-50"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') void submitComment();
                   }}
@@ -394,7 +403,7 @@ export function ReelsPage() {
           onClick={() => setMenuReel(null)}
         >
           <div
-            className="w-full max-w-sm rounded-t-[24px] bg-white p-2 shadow-2xl sm:rounded-[24px]"
+            className="w-full max-w-sm rounded-t-[24px] bg-white p-2 text-slate-900 shadow-2xl dark:bg-zinc-900 dark:text-zinc-50 sm:rounded-[24px]"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-1 flex items-center justify-between px-3 py-2">
@@ -553,8 +562,8 @@ function MenuBtn({
     <button
       type="button"
       onClick={onClick}
-      className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-medium hover:bg-slate-50 ${
-        danger ? 'text-error' : 'text-slate-800'
+      className={`w-full rounded-2xl px-4 py-3.5 text-left text-sm font-medium hover:bg-slate-50 dark:hover:bg-zinc-800 ${
+        danger ? 'text-error' : 'text-slate-800 dark:text-zinc-100'
       }`}
     >
       {label}

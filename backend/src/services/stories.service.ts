@@ -365,6 +365,7 @@ export async function deleteStoryOwned(
     where: { id: storyId, isDeleted: false },
   });
   if (!story) throw new AppError(404, 'Story not found');
+  // Ownership enforced: only author or Super Admin
   assertCanModerate(actor, story.userId);
 
   await prisma.story.update({
@@ -385,7 +386,23 @@ export async function deleteStoryOwned(
     ...meta,
   });
 
-  return { message: 'Story deleted successfully.', id: storyId };
+  // Real-time: remove story from other clients without full refresh
+  try {
+    const { getIo } = await import('../socket.js');
+    getIo()?.emit('story:deleted', {
+      storyId,
+      userId: story.userId,
+      deletedBy: actor.id,
+    });
+  } catch {
+    /* socket optional during tests */
+  }
+
+  return {
+    message: 'Story deleted successfully.',
+    id: storyId,
+    userId: story.userId,
+  };
 }
 
 export async function hideStory(userId: string, storyId: string) {

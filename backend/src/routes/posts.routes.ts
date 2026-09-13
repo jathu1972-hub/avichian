@@ -14,6 +14,13 @@ import {
   togglePostLike,
   updatePost,
 } from '../services/posts.service.js';
+import {
+  addPostComment,
+  deletePostComment,
+  editPostComment,
+  listPostComments,
+  togglePostCommentLike,
+} from '../services/comments.service.js';
 import { optionalMediaUrlSchema } from '../utils/media.js';
 import { routeParam } from '../utils/route-param.js';
 import { getRequestMeta } from '../middleware/request-meta.js';
@@ -148,6 +155,102 @@ postsRouter.post('/:postId/like', async (req: AuthRequest, res, next) => {
   try {
     const result = await togglePostLike(req.user!.id, routeParam(req.params.postId));
     res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const commentBodySchema = z.object({
+  body: z.string().min(1).max(500),
+  parentId: z.string().uuid().optional().nullable(),
+});
+
+postsRouter.get('/:postId/comments', async (req: AuthRequest, res, next) => {
+  try {
+    const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 30;
+    const data = await listPostComments(
+      routeParam(req.params.postId),
+      req.user!.id,
+      cursor,
+      limit,
+    );
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+postsRouter.post(
+  '/:postId/comments',
+  validateBody(commentBodySchema),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const data = await addPostComment(
+        req.user!.id,
+        routeParam(req.params.postId),
+        req.body.body,
+        req.body.parentId,
+      );
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// Alias matching reels style
+postsRouter.post(
+  '/:postId/comment',
+  validateBody(commentBodySchema),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const data = await addPostComment(
+        req.user!.id,
+        routeParam(req.params.postId),
+        req.body.body,
+        req.body.parentId,
+      );
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+postsRouter.patch(
+  '/comments/:commentId',
+  validateBody(z.object({ body: z.string().min(1).max(500) })),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const data = await editPostComment(
+        req.user!.id,
+        routeParam(req.params.commentId),
+        req.body.body,
+      );
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+postsRouter.delete('/comments/:commentId', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await deletePostComment(
+      { id: req.user!.id, role: req.user!.role },
+      routeParam(req.params.commentId),
+    );
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+postsRouter.post('/comments/:commentId/like', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await togglePostCommentLike(req.user!.id, routeParam(req.params.commentId));
+    res.json({ success: true, data });
   } catch (error) {
     next(error);
   }

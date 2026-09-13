@@ -48,11 +48,36 @@ async function main() {
       role: 'SUPER_ADMIN',
       departmentId: department.id,
       profile: { create: { name: 'Super Admin' } },
-      admin: { create: {} },
+      admin: {
+        create: {
+          username: regNo.toLowerCase().replace(/[^a-z0-9]/g, '') || 'admin',
+          employeeId: regNo,
+          permissions: {
+            studentManagement: true,
+            communityManagement: true,
+            events: true,
+            moderation: true,
+            reports: true,
+            settings: true,
+            superAdminManagement: true,
+            announcements: true,
+            passwordReset: true,
+          },
+          isRoot: true,
+        },
+      },
     },
   });
 
   console.info('Super Admin created:', user.regNo, user.email);
+  // Ensure protected rootadmin account exists as well
+  try {
+    const { ensureRootSuperAdmin } = await import('../src/services/super-admin/admins.service.js');
+    const root = await ensureRootSuperAdmin({ password });
+    console.info('Root Super Admin:', root);
+  } catch (e) {
+    console.warn('ensureRootSuperAdmin skipped:', e);
+  }
 }
 
 main()

@@ -2,7 +2,7 @@ import { MessageType } from '@prisma/client';
 import { sanitizeText } from '@avichian/shared';
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../utils/errors.js';
-import { areFriends, isBlockedEitherWay } from './friends.service.js';
+import { areFriends, getBlockedPeerIds, isBlockedEitherWay } from './friends.service.js';
 import { createNotification } from './notification.service.js';
 
 const userPreview = {
@@ -158,6 +158,11 @@ export async function getOrCreateDirectConversation(userId: string, peerId: stri
   });
 
   if (existing && existing.members.length === 2) {
+    // Re-open for this user if they previously hid the chat
+    await prisma.conversationMember.updateMany({
+      where: { conversationId: existing.id, userId },
+      data: { hiddenAt: null },
+    });
     return existing;
   }
 
@@ -174,12 +179,34 @@ export async function getOrCreateDirectConversation(userId: string, peerId: stri
 }
 
 export async function listConversations(userId: string) {
+  const [friendIds, blockedIds] = await Promise.all([
+    import('./friends.service.js').then((m) => m.getFriendIds(userId)),
+    getBlockedPeerIds(userId),
+  ]);
+  const friendSet = new Set(friendIds);
+  const blockedSet = new Set(blockedIds);
+
   const memberships = await prisma.conversationMember.findMany({
-    where: { userId },
+    where: {
+      userId,
+      hiddenAt: null,
+    },
     include: {
       conversation: {
         include: {
-          members: { include: { user: { select: userPreview } } },
+          members: {
+            include: {
+              user: {
+                select: {
+                  ...userPreview,
+                  accountStatus: true,
+                  lastLoginAt: true,
+                  forcePasswordChange: true,
+                  deletedAt: true,
+                },
+              },
+            },
+          },
           messages: {
             where: { deletedAt: null },
             orderBy: { createdAt: 'desc' },
@@ -191,38 +218,62 @@ export async function listConversations(userId: string) {
     orderBy: { conversation: { updatedAt: 'desc' } },
   });
 
-  const result = await Promise.all(
-    memberships.map(async (m) => {
-      const peer = m.conversation.members.find((x) => x.userId !== userId)?.user;
-      const last = m.conversation.messages[0];
-      const unreadCount = await prisma.message.count({
-        where: {
-          conversationId: m.conversationId,
-          senderId: { not: userId },
-          deletedAt: null,
-          seenAt: null,
-        },
-      });
+  const result = [];
+  for (const m of memberships) {
+    const peerMember = m.conversation.members.find((x) => x.userId !== userId);
+    const peer = peerMember?.user;
+    if (!peer || peer.deletedAt) continue;
+    // Only accepted friends appear in chat
+    if (!friendSet.has(peer.id)) continue;
+    // Peer must be an activated AVICHIAN user
+    if (
+      peer.accountStatus !== 'ACTIVE' ||
+      !peer.lastLoginAt ||
+      peer.forcePasswordChange
+    ) {
+      continue;
+    }
+    // Skip blocked
+    if (blockedSet.has(peer.id)) continue;
 
-      return {
-        id: m.conversation.id,
-        peer: peer ? mapUser(peer) : null,
-        lastMessage: last
-          ? {
-              id: last.id,
-              body: last.body,
-              type: last.type,
-              createdAt: last.createdAt.toISOString(),
-              senderId: last.senderId,
-            }
-          : null,
-        unreadCount,
-        updatedAt: m.conversation.updatedAt.toISOString(),
-      };
-    }),
-  );
+    const last = m.conversation.messages[0];
+    const unreadCount = await prisma.message.count({
+      where: {
+        conversationId: m.conversationId,
+        senderId: { not: userId },
+        deletedAt: null,
+        seenAt: null,
+      },
+    });
+
+    result.push({
+      id: m.conversation.id,
+      peer: mapUser(peer),
+      lastMessage: last
+        ? {
+            id: last.id,
+            body: last.body,
+            type: last.type,
+            createdAt: last.createdAt.toISOString(),
+            senderId: last.senderId,
+          }
+        : null,
+      unreadCount,
+      updatedAt: m.conversation.updatedAt.toISOString(),
+    });
+  }
 
   return result;
+}
+
+/** Hide conversation for this user only (delete chat for me). */
+export async function hideConversationForUser(userId: string, conversationId: string) {
+  await assertMember(userId, conversationId);
+  await prisma.conversationMember.update({
+    where: { conversationId_userId: { conversationId, userId } },
+    data: { hiddenAt: new Date() },
+  });
+  return { ok: true, conversationId, hidden: true };
 }
 
 export async function listMessages(userId: string, conversationId: string, cursor?: string) {
@@ -315,6 +366,12 @@ export async function sendMessage(
   await prisma.conversation.update({
     where: { id: conversationId },
     data: { updatedAt: new Date() },
+  });
+
+  // New message un-hides the chat for all members who deleted it for themselves
+  await prisma.conversationMember.updateMany({
+    where: { conversationId, hiddenAt: { not: null } },
+    data: { hiddenAt: null },
   });
 
   // Keep sender lastRead current

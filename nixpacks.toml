@@ -1,0 +1,18 @@
+# Nixpacks config for Railway — native deps for argon2 / bcrypt
+[phases.setup]
+nixPkgs = ["nodejs_20", "openssl", "python3", "gcc", "gnumake"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+# When railway.toml sets buildCommand, that overrides phases.build.
+# Keep this in sync as a fallback.
+[phases.build]
+cmds = [
+  "npm run build -w @avichian/shared",
+  "npx prisma generate --schema=backend/prisma/schema.prisma",
+  "npm run build -w @avichian/backend",
+]
+
+[start]
+cmd = "cd backend && (npx prisma migrate deploy || npx prisma db push) && node dist/index.js"

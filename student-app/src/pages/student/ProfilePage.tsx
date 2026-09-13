@@ -16,6 +16,7 @@ import {
   X,
   Sparkles,
   Plus,
+  Zap,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -374,6 +375,11 @@ export function ProfilePage() {
                   <h2 className="font-display text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
                     {user.name}
                   </h2>
+                  {user.role === 'STAFF' ? (
+                    <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+                      Staff
+                    </span>
+                  ) : null}
                   {(user as { verifiedBadge?: boolean }).verifiedBadge ? (
                     <BadgeCheck size={18} className="text-primary" />
                   ) : null}
@@ -382,7 +388,9 @@ export function ProfilePage() {
                   {user.department}
                   {user.year ? ` · Year ${user.year}` : ''}
                 </p>
-                <p className="mt-0.5 font-mono text-xs text-slate-400">{user.regNo}</p>
+                <p className="mt-0.5 font-mono text-xs text-slate-400">
+                  {user.role === 'STAFF' ? `Staff ID: ${user.regNo}` : user.regNo}
+                </p>
                 <p className="mt-1.5 flex items-center gap-1.5 text-xs">
                   {user.online ? (
                     <>
@@ -602,6 +610,12 @@ export function ProfilePage() {
             >
               Edit about
             </button>
+            <Link
+              to="/home/skill-match/me"
+              className="flex items-center justify-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 py-3 text-sm font-semibold text-emerald-200"
+            >
+              <Zap size={16} /> Skill Match profile
+            </Link>
           </div>
         ) : null}
 

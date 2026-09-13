@@ -210,8 +210,9 @@ export function EventsAdminPage() {
 
   function exportCsv(id: string) {
     // Open CSV download via API with token is hard; use fetch blob
-    const token = localStorage.getItem('avichian_access_token');
     void (async () => {
+      const { getAccessToken } = await import('../../lib/api');
+      const token = getAccessToken();
       const base = (await import('../../lib/config')).getApiBase();
       const res = await fetch(`${base}/super-admin/events/${id}/participants.csv`, {
         credentials: 'include',

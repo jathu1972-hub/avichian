@@ -545,15 +545,20 @@ export async function addReelComment(
   const text = sanitizeText(body, 500);
   if (!text) throw new AppError(400, 'Comment is required');
 
+  let resolvedParent: string | null = null;
   if (parentId) {
     const parent = await prisma.reelComment.findFirst({
       where: { id: parentId, reelId, isDeleted: false },
     });
     if (!parent) throw new AppError(404, 'Parent comment not found');
+    if (parent.parentId) {
+      throw new AppError(400, 'Replies are limited to one level deep');
+    }
+    resolvedParent = parent.id;
   }
 
   const comment = await prisma.reelComment.create({
-    data: { reelId, userId, body: text, parentId: parentId || null },
+    data: { reelId, userId, body: text, parentId: resolvedParent },
     include: {
       user: {
         select: {
@@ -567,7 +572,52 @@ export async function addReelComment(
     },
   });
 
-  return mapComment({ ...comment, replies: [] }, userId);
+  const mapped = mapComment({ ...comment, replies: [] }, userId);
+
+  try {
+    const { notifyReelCommentSideEffects } = await import('./comments.service.js');
+    await notifyReelCommentSideEffects({
+      userId,
+      reelId,
+      commentId: comment.id,
+      body: text,
+      parentId: resolvedParent,
+      authorName: comment.user.profile?.name ?? comment.user.regNo,
+      reelAuthorId: reel.authorId,
+      mapped,
+    });
+  } catch (err) {
+    console.error('[reel] comment side-effects failed', err);
+  }
+
+  return mapped;
+}
+
+export async function editReelComment(userId: string, commentId: string, body: string) {
+  const comment = await prisma.reelComment.findFirst({
+    where: { id: commentId, isDeleted: false },
+  });
+  if (!comment) throw new AppError(404, 'Comment not found');
+  if (comment.userId !== userId) throw new AppError(403, 'Not allowed');
+  const text = sanitizeText(body, 500);
+  if (!text) throw new AppError(400, 'Comment is required');
+
+  const updated = await prisma.reelComment.update({
+    where: { id: commentId },
+    data: { body: text },
+    include: {
+      user: {
+        select: {
+          id: true,
+          regNo: true,
+          profile: { select: { name: true, profilePhotoUrl: true } },
+        },
+      },
+      likes: { where: { userId }, select: { id: true } },
+      _count: { select: { likes: true, replies: true } },
+    },
+  });
+  return mapComment({ ...updated, replies: [] }, userId);
 }
 
 export async function deleteReelComment(

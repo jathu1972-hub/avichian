@@ -44,7 +44,7 @@ export async function createPost(
     include: {
       author: { select: authorSelect },
       likes: { where: { userId: authorId }, select: { id: true } },
-      _count: { select: { likes: true } },
+      _count: { select: { likes: true, comments: true } },
     },
   });
 
@@ -72,7 +72,7 @@ export async function getFeed(userId: string, departmentId: string, cursor?: str
     include: {
       author: { select: authorSelect },
       likes: { where: { userId }, select: { id: true } },
-      _count: { select: { likes: true } },
+      _count: { select: { likes: true, comments: true } },
     },
     orderBy: { createdAt: 'desc' },
     take: limit + 1,
@@ -162,7 +162,7 @@ export async function getUserPosts(viewerId: string, authorId: string, departmen
     include: {
       author: { select: authorSelect },
       likes: { where: { userId: viewerId }, select: { id: true } },
-      _count: { select: { likes: true } },
+      _count: { select: { likes: true, comments: true } },
     },
     orderBy: { createdAt: 'desc' },
     take: 50,
@@ -194,7 +194,7 @@ export async function updatePost(
     include: {
       author: { select: authorSelect },
       likes: { where: { userId: actor.id }, select: { id: true } },
-      _count: { select: { likes: true } },
+      _count: { select: { likes: true, comments: true } },
     },
   });
 
@@ -363,6 +363,7 @@ type PostWithRelations = {
   visibility: PostVisibility;
   createdAt: Date;
   archivedAt?: Date | null;
+  commentCount?: number;
   author: {
     id: string;
     regNo: string;
@@ -371,7 +372,7 @@ type PostWithRelations = {
     department: { name: string };
   };
   likes: Array<{ id: string }>;
-  _count: { likes: number };
+  _count: { likes: number; comments?: number };
 };
 
 function mapPost(post: PostWithRelations, viewerId: string) {
@@ -385,6 +386,7 @@ function mapPost(post: PostWithRelations, viewerId: string) {
     createdAt: post.createdAt.toISOString(),
     archived: Boolean(post.archivedAt),
     likeCount: post._count.likes,
+    commentCount: post.commentCount ?? post._count.comments ?? 0,
     likedByMe: post.likes.length > 0,
     isMine: post.authorId === viewerId,
     author: {

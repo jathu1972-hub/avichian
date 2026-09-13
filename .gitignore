@@ -69,3 +69,9 @@ tmp-cookies.txt
 .netlify-sites.json
 tmp-netlify-sites.json
 
+
+.deploy-student/
+.deploy-admin/
+.railway/
+
+backend/.env.prod-seed

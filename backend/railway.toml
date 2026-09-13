@@ -1,15 +1,14 @@
-# Railway — AVICHIAN Backend
-# Project → New → Deploy from GitHub → avichian-backend
-# Add PostgreSQL plugin; copy DATABASE_URL automatically.
-# Custom domain: api.avichian.com
+# Railway — AVICHIAN Backend (deploy from monorepo root OR backend/)
+# After first deploy: add PostgreSQL plugin, set FRONTEND_URLS + PUBLIC_API_URL.
+# Restart policy: Railway restarts crashed services automatically.
 
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm ci && npm run build -w @avichian/shared && npx prisma generate && npm run build"
+buildCommand = "npm ci && npm run build -w @avichian/shared && npx prisma generate && npm run build -w @avichian/backend"
 
 [deploy]
-startCommand = "npx prisma migrate deploy || npx prisma db push; npm start"
+startCommand = "cd backend && npx prisma migrate deploy || npx prisma db push; node dist/index.js"
 healthcheckPath = "/api/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 5
+restartPolicyMaxRetries = 10

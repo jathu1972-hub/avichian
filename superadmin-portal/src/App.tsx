@@ -49,6 +49,12 @@ const EventsAdminPage = lazy(() =>
 const CommunitiesAdminPage = lazy(() =>
   import('./pages/super-admin/CommunitiesAdminPage').then((m) => ({ default: m.CommunitiesAdminPage })),
 );
+const SuperAdminsPage = lazy(() =>
+  import('./pages/super-admin/SuperAdminsPage').then((m) => ({ default: m.SuperAdminsPage })),
+);
+const ForcePasswordChangePage = lazy(() =>
+  import('./pages/ForcePasswordChangePage').then((m) => ({ default: m.ForcePasswordChangePage })),
+);
 
 function PageFallback() {
   return (
@@ -76,6 +82,17 @@ function SuperAdminRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <SplashScreen />;
   if (!user || user.role !== 'SUPER_ADMIN') return <Navigate to="/login" replace />;
+  if (user.forcePasswordChange || user.isFirstLogin) {
+    return <Navigate to="/force-password" replace />;
+  }
+  return children;
+}
+
+function ForcePasswordRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <SplashScreen />;
+  if (!user || user.role !== 'SUPER_ADMIN') return <Navigate to="/login" replace />;
+  if (!user.forcePasswordChange && !user.isFirstLogin) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -90,6 +107,16 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<GuestRoute><SuperAdminLoginPage /></GuestRoute>} />
           <Route path="/admin/login" element={<Navigate to="/login" replace />} />
+          <Route
+            path="/force-password"
+            element={
+              <ForcePasswordRoute>
+                <LazyPage>
+                  <ForcePasswordChangePage />
+                </LazyPage>
+              </ForcePasswordRoute>
+            }
+          />
           <Route
             path="/"
             element={
@@ -111,6 +138,7 @@ export default function App() {
             <Route path="events" element={<LazyPage><EventsAdminPage /></LazyPage>} />
             <Route path="communities" element={<LazyPage><CommunitiesAdminPage /></LazyPage>} />
             <Route path="analytics" element={<LazyPage><DashboardHome /></LazyPage>} />
+            <Route path="super-admins" element={<LazyPage><SuperAdminsPage /></LazyPage>} />
             <Route path="audit-logs" element={<LazyPage><AuditLogsPage /></LazyPage>} />
             <Route path="settings" element={<LazyPage><SettingsPage /></LazyPage>} />
             <Route path="health" element={<LazyPage><SystemHealthPage /></LazyPage>} />

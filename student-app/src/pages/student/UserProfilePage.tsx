@@ -1,6 +1,6 @@
 import { MessageCircle, Phone, UserPlus, Video } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { PostCard } from '../../components/student/PostCard';
 import { StudentAvatar } from '../../components/student/StudentAvatar';
@@ -241,6 +241,15 @@ export function UserProfilePage() {
         ) : null}
 
         {error ? <p className="mt-3 text-sm text-error">{error}</p> : null}
+
+        {!profile.isSelf ? (
+          <Link
+            to={`/home/skill-match/${profile.id}`}
+            className="mt-4 inline-flex text-sm font-semibold text-primary"
+          >
+            Open Skill Match profile
+          </Link>
+        ) : null}
       </div>
 
       <div className="space-y-3">

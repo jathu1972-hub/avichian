@@ -82,8 +82,8 @@ export function attachSocketServer(httpServer: HttpServer) {
       where: { id: user.id },
       data: { online: true, lastSeen: new Date() },
     });
-    io.emit('presence:update', { userId: user.id, online: true, lastSeen: new Date().toISOString() });
-    io.emit('userOnline', { userId: user.id });
+    // Targeted presence only (not global io.emit) — scales to thousands of concurrent users
+    await broadcastPresence(user.id, true);
 
     socket.on('joinConversation', async (conversationId: string, ack?: (r: unknown) => void) => {
       try {
@@ -114,6 +114,45 @@ export function attachSocketServer(httpServer: HttpServer) {
         ack?.({ ok: false, error: error instanceof Error ? error.message : 'Failed' });
       }
     });
+
+    // Live comment rooms (posts / reels)
+    socket.on('joinPost', (postId: string, ack?: (r: unknown) => void) => {
+      if (postId && typeof postId === 'string') {
+        socket.join(`post:${postId}`);
+        ack?.({ ok: true });
+      } else {
+        ack?.({ ok: false });
+      }
+    });
+    socket.on('leavePost', (postId: string) => {
+      if (postId) socket.leave(`post:${postId}`);
+    });
+    socket.on('joinReel', (reelId: string, ack?: (r: unknown) => void) => {
+      if (reelId && typeof reelId === 'string') {
+        socket.join(`reel:${reelId}`);
+        ack?.({ ok: true });
+      } else {
+        ack?.({ ok: false });
+      }
+    });
+    socket.on('leaveReel', (reelId: string) => {
+      if (reelId) socket.leave(`reel:${reelId}`);
+    });
+
+    // Call keepalive (signaling heartbeat — no duration limit)
+    socket.on(
+      'call:ping',
+      (payload: { toUserId?: string; callId?: string }, ack?: (r: unknown) => void) => {
+        if (payload?.toUserId) {
+          emitToUser(payload.toUserId, 'call:pong', {
+            fromUserId: user.id,
+            callId: payload.callId,
+            at: Date.now(),
+          });
+        }
+        ack?.({ ok: true, at: Date.now() });
+      },
+    );
 
     // Back-compat alias
     socket.on('chat:join', (conversationId: string) => {
@@ -433,12 +472,7 @@ export function attachSocketServer(httpServer: HttpServer) {
           where: { id: user.id },
           data: { online: false, lastSeen: new Date() },
         });
-        io.emit('presence:update', {
-          userId: user.id,
-          online: false,
-          lastSeen: new Date().toISOString(),
-        });
-        io.emit('userOffline', { userId: user.id });
+        await broadcastPresence(user.id, false);
       } else {
         connectionCounts.set(user.id, count);
       }
@@ -446,4 +480,25 @@ export function attachSocketServer(httpServer: HttpServer) {
   });
 
   return io;
+}
+
+/** Notify only friends of presence changes (never global broadcast). */
+async function broadcastPresence(userId: string, online: boolean) {
+  try {
+    const { getFriendIds } = await import('./services/friends.service.js');
+    const friendIds = await getFriendIds(userId);
+    const payload = {
+      userId,
+      online,
+      lastSeen: new Date().toISOString(),
+    };
+    for (const friendId of friendIds) {
+      emitToUser(friendId, 'presence:update', payload);
+      emitToUser(friendId, online ? 'userOnline' : 'userOffline', { userId });
+    }
+    // Self tabs also need consistency
+    emitToUser(userId, 'presence:update', payload);
+  } catch (err) {
+    console.error('[socket] presence broadcast failed', err);
+  }
 }

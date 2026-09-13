@@ -25,6 +25,7 @@ import { eventsRouter } from './routes/events.routes.js';
 import { communitiesRouter } from './routes/communities.routes.js';
 import { settingsRouter } from './routes/settings.routes.js';
 import { safetyRouter } from './routes/safety.routes.js';
+import { skillMatchRouter } from './routes/skill-match.routes.js';
 import { serveLocalMedia } from './middleware/media-static.js';
 
 /** Allow LAN phone/tablet access in development (Vite --host). */
@@ -44,6 +45,55 @@ function isDevNetworkOrigin(origin: string): boolean {
   } catch {
     return false;
   }
+}
+
+const processStartedAt = Date.now();
+
+function formatUptime(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  if (days > 0) return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+async function healthPayload() {
+  let database: 'connected' | 'disconnected' = 'disconnected';
+  try {
+    const { prisma } = await import('./lib/prisma.js');
+    await prisma.$queryRaw`SELECT 1`;
+    database = 'connected';
+  } catch (err) {
+    console.error('[health] database check failed', err);
+  }
+  const ok = database === 'connected';
+  const time = new Date().toISOString();
+  const uptimeMs = Date.now() - processStartedAt;
+  const uptime = formatUptime(uptimeMs);
+  return {
+    ok,
+    body: {
+      status: ok ? 'ok' : 'degraded',
+      uptime,
+      database,
+      success: ok,
+      server: 'running',
+      time,
+      uptimeMs,
+      data: {
+        status: ok ? 'ok' : 'degraded',
+        uptime,
+        database,
+        server: 'running',
+        service: 'avichian-api',
+        time,
+      },
+    },
+  };
 }
 
 export function createApp() {
@@ -92,33 +142,13 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true, limit: '100mb' }));
   app.use(cookieParser());
 
-  app.get('/api/health', async (_req, res) => {
-    let database: 'connected' | 'disconnected' = 'disconnected';
-    try {
-      const { prisma } = await import('./lib/prisma.js');
-      await prisma.$queryRaw`SELECT 1`;
-      database = 'connected';
-    } catch (err) {
-      console.error('[health] database check failed', err);
-    }
-    const ok = database === 'connected';
-    const time = new Date().toISOString();
-    // Keep both shapes: nested `data` (app convention) + flat fields for probes
-    res.status(ok ? 200 : 503).json({
-      success: ok,
-      status: ok ? 'ok' : 'degraded',
-      database,
-      server: 'running',
-      time,
-      data: {
-        status: ok ? 'ok' : 'degraded',
-        database,
-        server: 'running',
-        service: 'avichian-api',
-        time,
-      },
-    });
-  });
+  // Health probes (Railway / load balancers / browsers)
+  const healthHandler = async (_req: express.Request, res: express.Response) => {
+    const { ok, body } = await healthPayload();
+    res.status(ok ? 200 : 503).json(body);
+  };
+  app.get('/health', healthHandler);
+  app.get('/api/health', healthHandler);
 
   app.get('/api/csrf-token', (req, res) => {
     const token = issueCsrfToken(req, res);
@@ -147,6 +177,7 @@ export function createApp() {
   app.use('/api/communities', csrfProtection, communitiesRouter);
   app.use('/api/settings', csrfProtection, settingsRouter);
   app.use('/api/safety', csrfProtection, safetyRouter);
+  app.use('/api/skill-match', csrfProtection, skillMatchRouter);
   app.use('/api/campus', csrfProtection, campusRouter);
   app.use('/api/chat', csrfProtection, chatRouter);
   app.use('/api/chats', csrfProtection, chatRouter); // alias

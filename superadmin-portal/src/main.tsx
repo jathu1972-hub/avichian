@@ -12,8 +12,22 @@ const base = import.meta.env.BASE_URL || '/';
 const useHash = base !== '/' || import.meta.env.GITHUB_PAGES === 'true';
 const basename = base.replace(/\/$/, '') || undefined;
 
+/** Super Admin is dark-mode only. */
+function forceDarkTheme() {
+  try {
+    document.documentElement.classList.add('dark');
+    document.documentElement.style.colorScheme = 'dark';
+    localStorage.removeItem('sa-theme');
+    localStorage.setItem('sa-theme', 'dark');
+  } catch {
+    /* ignore */
+  }
+}
+forceDarkTheme();
+
 async function bootstrap() {
   await loadRuntimeConfig();
+  forceDarkTheme();
   const Router = useHash ? HashRouter : BrowserRouter;
   createRoot(document.getElementById('root')!).render(
     <StrictMode>

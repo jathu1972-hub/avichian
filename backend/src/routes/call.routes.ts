@@ -16,10 +16,13 @@ export const callRouter = Router();
 callRouter.use(authenticate, requirePasswordReady, requireRoles('STUDENT', 'STAFF'));
 
 /** ICE / TURN / LiveKit mode for the browser */
-callRouter.get('/ice-config', (_req: AuthRequest, res) => {
+function sendIceConfig(_req: AuthRequest, res: import('express').Response) {
   const data = getIceConfig();
   res.json({ success: true, data });
-});
+}
+callRouter.get('/ice-config', sendIceConfig);
+/** Alias for clients that request /ice-servers */
+callRouter.get('/ice-servers', sendIceConfig);
 
 callRouter.get('/history', async (req: AuthRequest, res, next) => {
   try {

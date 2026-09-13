@@ -10,7 +10,9 @@ import {
   addMasterStudent,
   banStudent,
   createStudentAccount,
+  exportStudentsCsv,
   getStudentAdminProfile,
+  getStudentManagementStats,
   listMasterStudents,
   listStudents,
   resetStudentPassword,
@@ -22,11 +24,28 @@ import {
   updateStudent,
   warnStudent,
   forceStudentPasswordChange,
+  type StudentListStatus,
 } from '../services/super-admin/students.service.js';
 import {
+  detectColumnMapping,
+  executeBulkStudentImport,
+  listImportHistory,
+  previewBulkStudentImport,
+  rowsFromMatrix,
+} from '../services/super-admin/student-import.service.js';
+import {
+  activateSuperAdmin,
   createSuperAdminAccount,
+  deleteSuperAdmin,
+  ensureRootSuperAdmin,
+  getSuperAdmin,
+  getSuperAdminActivity,
   listSuperAdmins,
   repairAdminRoles,
+  resetSuperAdminPassword,
+  suspendSuperAdmin,
+  updateSuperAdmin,
+  ALL_SUPER_ADMIN_PERMISSIONS,
 } from '../services/super-admin/admins.service.js';
 import {
   activateStaff,
@@ -35,6 +54,12 @@ import {
   resetStaffPassword,
   suspendStaff,
 } from '../services/super-admin/staff.service.js';
+import {
+  detectStaffColumnMapping,
+  executeBulkStaffImport,
+  previewBulkStaffImport,
+  staffRowsFromMatrix,
+} from '../services/super-admin/staff-import.service.js';
 import {
   createDepartment,
   listDepartments,
@@ -73,6 +98,7 @@ import { prisma } from '../lib/prisma.js';
 import { importStudentMasterFromPayload } from '../services/student-master.service.js';
 import { writeAuditLog } from '../services/audit.service.js';
 import { routeParam } from '../utils/route-param.js';
+import { AppError } from '../utils/errors.js';
 
 const router = Router();
 router.use(authenticate, requireSuperAdmin);
@@ -89,9 +115,21 @@ router.get('/dashboard/stats', async (_req, res, next) => {
 // ── Students ──────────────────────────────────────────────
 router.get('/students', async (req, res, next) => {
   try {
+    const statusRaw = typeof req.query.status === 'string' ? req.query.status : 'ALL';
+    const status = (
+      ['ACTIVE', 'SUSPENDED', 'NEVER_LOGGED_IN', 'NOT_ACTIVATED', 'ALL'].includes(statusRaw)
+        ? statusRaw
+        : 'ALL'
+    ) as StudentListStatus;
+    const year =
+      typeof req.query.year === 'string' && Number(req.query.year)
+        ? Number(req.query.year)
+        : undefined;
     const data = await listStudents({
       search: req.query.search as string,
       departmentId: req.query.departmentId as string,
+      year,
+      status,
       page: Number(req.query.page ?? 1),
       limit: Number(req.query.limit ?? 50),
     });
@@ -100,6 +138,175 @@ router.get('/students', async (req, res, next) => {
     next(error);
   }
 });
+
+router.get('/students/stats', async (_req, res, next) => {
+  try {
+    const data = await getStudentManagementStats();
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/students/export', async (req, res, next) => {
+  try {
+    const statusRaw = typeof req.query.status === 'string' ? req.query.status : 'ALL';
+    const status = (
+      ['ACTIVE', 'SUSPENDED', 'NEVER_LOGGED_IN', 'NOT_ACTIVATED', 'ALL'].includes(statusRaw)
+        ? statusRaw
+        : 'ALL'
+    ) as StudentListStatus;
+    const year =
+      typeof req.query.year === 'string' && Number(req.query.year)
+        ? Number(req.query.year)
+        : undefined;
+    const csv = await exportStudentsCsv({
+      search: req.query.search as string,
+      departmentId: req.query.departmentId as string,
+      year,
+      status,
+    });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="avichian-students.csv"');
+    res.send(csv);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/students/import/history', async (_req, res, next) => {
+  try {
+    const data = await listImportHistory(50);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post(
+  '/students/import/detect',
+  validateBody(
+    z.object({
+      headers: z.array(z.string()),
+    }),
+  ),
+  async (req, res, next) => {
+    try {
+      const data = detectColumnMapping(req.body.headers);
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  '/students/import/preview',
+  validateBody(
+    z.object({
+      headers: z.array(z.string()).optional(),
+      matrix: z.array(z.array(z.string())).optional(),
+      rows: z
+        .array(
+          z.object({
+            rowNumber: z.number().int().positive(),
+            name: z.string().optional(),
+            regNo: z.string().optional(),
+            email: z.string().optional(),
+            mobile: z.string().optional(),
+          }),
+        )
+        .optional(),
+      mapping: z
+        .object({
+          nameCol: z.number().int().min(0),
+          regCol: z.number().int().min(0),
+          emailCol: z.number().int().min(0).nullable().optional(),
+          mobileCol: z.number().int().min(0).nullable().optional(),
+        })
+        .optional(),
+      departmentId: z.string().uuid(),
+      year: z.number().int().min(1).max(6),
+      section: z.string().max(20).optional().nullable(),
+    }),
+  ),
+  async (req, res, next) => {
+    try {
+      let rows = req.body.rows as
+        | Array<{ rowNumber: number; name?: string; regNo?: string; email?: string; mobile?: string }>
+        | undefined;
+      if (!rows?.length && req.body.headers && req.body.matrix) {
+        rows = rowsFromMatrix(req.body.headers, req.body.matrix, req.body.mapping);
+      }
+      if (!rows?.length) throw new AppError(400, 'No student rows provided');
+      const data = await previewBulkStudentImport({
+        rows,
+        departmentId: req.body.departmentId,
+        year: req.body.year,
+        section: req.body.section,
+      });
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  '/students/import',
+  validateBody(
+    z.object({
+      headers: z.array(z.string()).optional(),
+      matrix: z.array(z.array(z.string())).optional(),
+      rows: z
+        .array(
+          z.object({
+            rowNumber: z.number().int().positive(),
+            name: z.string().optional(),
+            regNo: z.string().optional(),
+            email: z.string().optional(),
+            mobile: z.string().optional(),
+          }),
+        )
+        .optional(),
+      mapping: z
+        .object({
+          nameCol: z.number().int().min(0),
+          regCol: z.number().int().min(0),
+          emailCol: z.number().int().min(0).nullable().optional(),
+          mobileCol: z.number().int().min(0).nullable().optional(),
+        })
+        .optional(),
+      departmentId: z.string().uuid(),
+      year: z.number().int().min(1).max(6),
+      section: z.string().max(20).optional().nullable(),
+      password: z.string().min(8).optional(),
+    }),
+  ),
+  async (req: AuthRequest, res, next) => {
+    try {
+      let rows = req.body.rows as
+        | Array<{ rowNumber: number; name?: string; regNo?: string; email?: string; mobile?: string }>
+        | undefined;
+      if (!rows?.length && req.body.headers && req.body.matrix) {
+        rows = rowsFromMatrix(req.body.headers, req.body.matrix, req.body.mapping);
+      }
+      if (!rows?.length) throw new AppError(400, 'No student rows provided');
+      const data = await executeBulkStudentImport({
+        rows,
+        departmentId: req.body.departmentId,
+        year: req.body.year,
+        section: req.body.section,
+        password: req.body.password,
+        adminId: req.user!.id,
+        meta: getRequestMeta(req),
+      });
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 router.get('/students/master', async (req, res, next) => {
   try {
@@ -355,10 +562,130 @@ router.post(
   },
 );
 
-// ── Super Admins ──────────────────────────────────────────
-router.get('/admins', async (_req, res, next) => {
+// ── Super Admins (enterprise management) ──────────────────
+const permissionsSchema = z
+  .object({
+    studentManagement: z.boolean().optional(),
+    communityManagement: z.boolean().optional(),
+    events: z.boolean().optional(),
+    moderation: z.boolean().optional(),
+    reports: z.boolean().optional(),
+    settings: z.boolean().optional(),
+    superAdminManagement: z.boolean().optional(),
+    announcements: z.boolean().optional(),
+    passwordReset: z.boolean().optional(),
+  })
+  .optional()
+  .nullable();
+
+const createSuperAdminSchema = z
+  .object({
+    name: z.string().min(1),
+    email: z.string().email(),
+    mobile: z.string().min(10).optional().nullable(),
+    username: z.string().min(3).max(32),
+    employeeId: z.string().min(1).max(12).optional().nullable(),
+    password: z.string().min(8),
+    confirmPassword: z.string().min(8).optional(),
+    profilePhotoUrl: z.string().url().optional().nullable().or(z.literal('')),
+    department: z.string().optional().nullable(),
+    permissions: permissionsSchema,
+    status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(),
+  })
+  .refine((d) => !d.confirmPassword || d.password === d.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
+
+router.get('/admins', async (req, res, next) => {
   try {
-    const data = await listSuperAdmins();
+    const data = await listSuperAdmins({ search: req.query.search as string | undefined });
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/admins/permissions-template', (_req, res) => {
+  res.json({
+    success: true,
+    data: {
+      permissions: ALL_SUPER_ADMIN_PERMISSIONS,
+      keys: Object.keys(ALL_SUPER_ADMIN_PERMISSIONS),
+    },
+  });
+});
+
+router.get('/admins/:id', async (req, res, next) => {
+  try {
+    const data = await getSuperAdmin(routeParam(req.params.id));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/admins/:id/activity', async (req, res, next) => {
+  try {
+    const data = await getSuperAdminActivity(routeParam(req.params.id), Number(req.query.limit ?? 50));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/admins', validateBody(createSuperAdminSchema), async (req: AuthRequest, res, next) => {
+  try {
+    const body = { ...req.body };
+    if (body.profilePhotoUrl === '') body.profilePhotoUrl = null;
+    const data = await createSuperAdminAccount(body, req.user!.id, getRequestMeta(req));
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch(
+  '/admins/:id',
+  validateBody(
+    z.object({
+      name: z.string().min(1).optional(),
+      email: z.string().email().optional(),
+      mobile: z.string().min(10).optional().nullable(),
+      username: z.string().min(3).max(32).optional(),
+      employeeId: z.string().min(1).max(12).optional().nullable(),
+      profilePhotoUrl: z.string().optional().nullable(),
+      permissions: permissionsSchema,
+      status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(),
+    }),
+  ),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const data = await updateSuperAdmin(
+        routeParam(req.params.id),
+        req.body,
+        req.user!.id,
+        getRequestMeta(req),
+      );
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post('/admins/:id/suspend', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await suspendSuperAdmin(routeParam(req.params.id), req.user!.id, getRequestMeta(req));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/admins/:id/activate', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await activateSuperAdmin(routeParam(req.params.id), req.user!.id, getRequestMeta(req));
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -366,14 +693,10 @@ router.get('/admins', async (_req, res, next) => {
 });
 
 router.post(
-  '/admins',
+  '/admins/:id/reset-password',
   validateBody(
     z
       .object({
-        name: z.string().min(1),
-        employeeId: z.string().min(1),
-        email: z.string().email(),
-        mobile: z.string().min(10).optional().nullable(),
         password: z.string().min(8),
         confirmPassword: z.string().min(8).optional(),
       })
@@ -384,17 +707,41 @@ router.post(
   ),
   async (req: AuthRequest, res, next) => {
     try {
-      const data = await createSuperAdminAccount(req.body, req.user!.id, getRequestMeta(req));
-      res.status(201).json({ success: true, data });
+      const data = await resetSuperAdminPassword(
+        routeParam(req.params.id),
+        req.body.password,
+        req.body.confirmPassword,
+        req.user!.id,
+        getRequestMeta(req),
+      );
+      res.json({ success: true, data });
     } catch (error) {
       next(error);
     }
   },
 );
 
+router.delete('/admins/:id', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await deleteSuperAdmin(routeParam(req.params.id), req.user!.id, getRequestMeta(req));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/admins/repair-roles', async (_req, res, next) => {
   try {
     const data = await repairAdminRoles();
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/admins/ensure-root', async (_req, res, next) => {
+  try {
+    const data = await ensureRootSuperAdmin();
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -476,6 +823,144 @@ router.get('/staff', async (req, res, next) => {
     next(error);
   }
 });
+
+/** Bulk Staff Import — Super Admin only (requireSuperAdmin on router). */
+router.post(
+  '/staff/import/detect',
+  validateBody(z.object({ headers: z.array(z.string()) })),
+  async (req, res, next) => {
+    try {
+      const data = detectStaffColumnMapping(req.body.headers);
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  '/staff/import/preview',
+  validateBody(
+    z.object({
+      headers: z.array(z.string()).optional(),
+      matrix: z.array(z.array(z.string())).optional(),
+      rows: z
+        .array(
+          z.object({
+            rowNumber: z.number().int().positive(),
+            name: z.string().optional(),
+            staffId: z.string().optional(),
+            email: z.string().optional(),
+            department: z.string().optional(),
+            designation: z.string().optional(),
+            mobile: z.string().optional(),
+          }),
+        )
+        .optional(),
+      mapping: z
+        .object({
+          nameCol: z.number().int().min(0),
+          staffIdCol: z.number().int().min(0),
+          emailCol: z.number().int().min(0).nullable().optional(),
+          departmentCol: z.number().int().min(0).nullable().optional(),
+          designationCol: z.number().int().min(0).nullable().optional(),
+          mobileCol: z.number().int().min(0).nullable().optional(),
+        })
+        .optional(),
+      departmentId: z.string().uuid().nullable().optional(),
+    }),
+  ),
+  async (req, res, next) => {
+    try {
+      let rows = req.body.rows as
+        | Array<{
+            rowNumber: number;
+            name?: string;
+            staffId?: string;
+            email?: string;
+            department?: string;
+            designation?: string;
+            mobile?: string;
+          }>
+        | undefined;
+      if (!rows?.length && req.body.headers && req.body.matrix) {
+        rows = staffRowsFromMatrix(req.body.headers, req.body.matrix, req.body.mapping);
+      }
+      if (!rows?.length) throw new AppError(400, 'No staff rows provided');
+      const data = await previewBulkStaffImport({
+        rows,
+        departmentId: req.body.departmentId,
+      });
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.post(
+  '/staff/import',
+  validateBody(
+    z.object({
+      headers: z.array(z.string()).optional(),
+      matrix: z.array(z.array(z.string())).optional(),
+      rows: z
+        .array(
+          z.object({
+            rowNumber: z.number().int().positive(),
+            name: z.string().optional(),
+            staffId: z.string().optional(),
+            email: z.string().optional(),
+            department: z.string().optional(),
+            designation: z.string().optional(),
+            mobile: z.string().optional(),
+          }),
+        )
+        .optional(),
+      mapping: z
+        .object({
+          nameCol: z.number().int().min(0),
+          staffIdCol: z.number().int().min(0),
+          emailCol: z.number().int().min(0).nullable().optional(),
+          departmentCol: z.number().int().min(0).nullable().optional(),
+          designationCol: z.number().int().min(0).nullable().optional(),
+          mobileCol: z.number().int().min(0).nullable().optional(),
+        })
+        .optional(),
+      departmentId: z.string().uuid().nullable().optional(),
+      fileName: z.string().max(255).optional(),
+    }),
+  ),
+  async (req: AuthRequest, res, next) => {
+    try {
+      let rows = req.body.rows as
+        | Array<{
+            rowNumber: number;
+            name?: string;
+            staffId?: string;
+            email?: string;
+            department?: string;
+            designation?: string;
+            mobile?: string;
+          }>
+        | undefined;
+      if (!rows?.length && req.body.headers && req.body.matrix) {
+        rows = staffRowsFromMatrix(req.body.headers, req.body.matrix, req.body.mapping);
+      }
+      if (!rows?.length) throw new AppError(400, 'No staff rows provided');
+      const data = await executeBulkStaffImport({
+        rows,
+        departmentId: req.body.departmentId,
+        adminId: req.user!.id,
+        meta: getRequestMeta(req),
+        fileName: req.body.fileName,
+      });
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 router.post(
   '/staff',

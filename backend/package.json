@@ -17,7 +17,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "seed:admin": "tsx scripts/bootstrap-super-admin.ts"
+    "seed:admin": "tsx scripts/bootstrap-super-admin.ts",
+    "seed:skills": "tsx src/scripts/seed-skill-catalog.ts"
   },
   "dependencies": {
     "@avichian/shared": "*",

@@ -16,6 +16,7 @@ import {
   createReelWithFiles,
   deleteReelComment,
   deleteReelOwned,
+  editReelComment,
   getReelById,
   hideReel,
   listReelComments,
@@ -336,6 +337,23 @@ reelsRouter.post(
         req.body.parentId,
       );
       res.status(201).json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+reelsRouter.patch(
+  '/comments/:commentId',
+  validateBody(z.object({ body: z.string().min(1).max(500) })),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const data = await editReelComment(
+        req.user!.id,
+        routeParam(req.params.commentId),
+        req.body.body,
+      );
+      res.json({ success: true, data });
     } catch (error) {
       next(error);
     }

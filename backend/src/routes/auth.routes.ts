@@ -67,12 +67,19 @@ const staffLoginSchema = z.object({
   rememberMe: z.boolean().optional(),
 });
 
-const superAdminLoginSchema = z.object({
-  adminId: z.string().min(1),
-  email: z.string().email(),
-  password: z.string().min(1),
-  rememberMe: z.boolean().optional(),
-});
+const superAdminLoginSchema = z
+  .object({
+    /** Preferred: username, email, or employee ID */
+    identifier: z.string().min(1).optional(),
+    username: z.string().min(1).optional(),
+    adminId: z.string().min(1).optional(),
+    email: z.string().email().optional(),
+    password: z.string().min(1),
+    rememberMe: z.boolean().optional(),
+  })
+  .refine((d) => d.identifier || d.username || d.adminId || d.email, {
+    message: 'Username or email is required',
+  });
 
 const studentLoginLookupSchema = z.object({
   regNo: z.string().min(1),

@@ -10,6 +10,7 @@ import {
   Trash2,
   UserPlus,
   X,
+  Zap,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -22,6 +23,7 @@ import {
   markNotificationsRead,
   rejectFriendRequest,
 } from '../../lib/social';
+import { acceptSkillConnect, declineSkillConnect } from '../../lib/skill-match';
 import { connectSocket } from '../../lib/socket';
 import { api } from '../../lib/api';
 
@@ -52,6 +54,8 @@ const icons: Record<string, typeof Bell> = {
   ANNOUNCEMENT: Megaphone,
   MESSAGE: MessageCircle,
   EVENT_REMINDER: Calendar,
+  SKILL_MATCH_REQUEST: Zap,
+  SKILL_MATCH_ACCEPTED: Zap,
 };
 
 type Filter = 'all' | 'unread' | 'read';
@@ -119,6 +123,9 @@ export function NotificationsPage() {
     socket.on('friend:accept', onFriendAccept);
     socket.on('friend:request', onFriendAccept);
     socket.on('friend:reject', onFriendAccept);
+    socket.on('skill-match:request', onFriendAccept);
+    socket.on('skill-match:accept', onFriendAccept);
+    socket.on('skill-match:decline', onFriendAccept);
     return () => {
       socket.off('notification', onNew);
       socket.off('notification:new', onNew);
@@ -127,6 +134,9 @@ export function NotificationsPage() {
       socket.off('friend:accept', onFriendAccept);
       socket.off('friend:request', onFriendAccept);
       socket.off('friend:reject', onFriendAccept);
+      socket.off('skill-match:request', onFriendAccept);
+      socket.off('skill-match:accept', onFriendAccept);
+      socket.off('skill-match:decline', onFriendAccept);
     };
   }, [load]);
 
@@ -194,7 +204,9 @@ export function NotificationsPage() {
     try {
       setBusyId(n.id);
       setError('');
-      if (requestId) {
+      if (n.type === 'SKILL_MATCH_REQUEST' && requestId) {
+        await acceptSkillConnect(requestId);
+      } else if (requestId) {
         await acceptFriendRequest(requestId);
       } else if (peerUserId) {
         await acceptFriendByUserId(peerUserId);
@@ -220,7 +232,11 @@ export function NotificationsPage() {
     try {
       setBusyId(n.id);
       setError('');
-      await rejectFriendRequest(requestId);
+      if (n.type === 'SKILL_MATCH_REQUEST') {
+        await declineSkillConnect(requestId);
+      } else {
+        await rejectFriendRequest(requestId);
+      }
       await load();
       setToast('Request declined');
       window.setTimeout(() => setToast(''), 2200);
@@ -271,7 +287,8 @@ export function NotificationsPage() {
         {list.map((n) => {
           const Icon = icons[n.type] ?? Bell;
           const isFriendReq =
-            n.type === 'FRIEND_REQUEST' && Boolean(n.data?.requestId || n.data?.userId);
+            (n.type === 'FRIEND_REQUEST' || n.type === 'SKILL_MATCH_REQUEST') &&
+            Boolean(n.data?.requestId || n.data?.userId);
           const unreadRow = isUnread(n);
           return (
             <div

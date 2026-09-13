@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Search } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { StudentAvatar } from '../../components/student/StudentAvatar';
 import {
@@ -63,7 +64,6 @@ export function FriendsPage() {
 
   async function handleAccept(requestId: string) {
     const row = incoming.find((r) => r.id === requestId);
-    // Optimistic: move to friends list
     setIncoming((prev) => prev.filter((r) => r.id !== requestId));
     if (row) {
       setFriends((prev) =>
@@ -110,25 +110,57 @@ export function FriendsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-2xl space-y-6">
       {toast ? (
-        <div className="fixed bottom-24 left-1/2 z-[80] -translate-x-1/2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-float">
+        <div className="fixed bottom-24 left-1/2 z-[80] -translate-x-1/2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-float dark:bg-zinc-100 dark:text-zinc-900">
           {toast}
         </div>
       ) : null}
       {error ? <p className="text-sm text-error">{error}</p> : null}
 
+      <div className="px-0.5">
+        <h1 className="font-display text-fluid-2xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-50">
+          Friends
+        </h1>
+        <p className="text-fluid-sm font-medium text-slate-500 dark:text-zinc-400">
+          People you are connected with
+        </p>
+      </div>
+
+      {/* Search People — separate from chat */}
+      <Link
+        to="/home/search?type=students"
+        className="premium-card flex items-center gap-3 p-4 transition hover:scale-[1.01]"
+      >
+        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Search size={20} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-slate-900 dark:text-zinc-50">Search People</p>
+          <p className="text-xs text-slate-500 dark:text-zinc-400">
+            Find activated AVICHIAN students by name or roll number
+          </p>
+        </div>
+      </Link>
+
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-slate-900">Friend requests</h2>
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-zinc-50">
+          Friend requests
+        </h2>
         {incoming.length === 0 ? (
-          <p className="text-sm text-slate-500">No incoming requests.</p>
+          <p className="text-sm text-slate-500 dark:text-zinc-400">No incoming requests.</p>
         ) : (
           incoming.map((request) => (
-            <div key={request.id} className="glass-card flex items-center gap-3 rounded-[24px] p-4 shadow-soft">
+            <div
+              key={request.id}
+              className="premium-card flex items-center gap-3 p-4"
+            >
               <StudentAvatar name={request.user.name} photoUrl={request.user.profilePhotoUrl} />
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-slate-900">{request.user.name}</p>
-                <p className="text-xs text-slate-500">{request.user.regNo}</p>
+                <p className="font-semibold text-slate-900 dark:text-zinc-50">
+                  {request.user.name}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-zinc-400">{request.user.regNo}</p>
               </div>
               <div className="flex gap-2">
                 <Button
@@ -153,13 +185,17 @@ export function FriendsPage() {
 
       {outgoing.length > 0 ? (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-slate-900">Sent requests</h2>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-zinc-50">
+            Sent requests
+          </h2>
           {outgoing.map((request) => (
-            <div key={request.id} className="glass-card flex items-center gap-3 rounded-[24px] p-4 shadow-soft">
+            <div key={request.id} className="premium-card flex items-center gap-3 p-4">
               <StudentAvatar name={request.user.name} photoUrl={request.user.profilePhotoUrl} />
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-slate-900">{request.user.name}</p>
-                <p className="text-xs text-slate-500">Pending</p>
+                <p className="font-semibold text-slate-900 dark:text-zinc-50">
+                  {request.user.name}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-zinc-400">Pending</p>
               </div>
               <Button
                 variant="ghost"
@@ -169,7 +205,9 @@ export function FriendsPage() {
                   setActionId(request.id);
                   void cancelFriendRequest(request.id)
                     .then(() => load())
-                    .catch((err) => setError(err instanceof Error ? err.message : 'Could not cancel'))
+                    .catch((err) =>
+                      setError(err instanceof Error ? err.message : 'Could not cancel'),
+                    )
                     .finally(() => setActionId(null));
                 }}
               >
@@ -181,20 +219,21 @@ export function FriendsPage() {
       ) : null}
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-slate-900">Friends ({friends.length})</h2>
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-zinc-50">
+          Friends ({friends.length})
+        </h2>
         {friends.length === 0 ? (
-          <p className="text-sm text-slate-500">Find classmates from Search to connect.</p>
+          <p className="text-sm text-slate-500 dark:text-zinc-400">
+            Find classmates from Search People to connect.
+          </p>
         ) : (
           friends.map((friend) => (
-            <div
-              key={friend.id}
-              className="glass-card flex items-center gap-3 rounded-[24px] p-4 shadow-soft"
-            >
+            <div key={friend.id} className="premium-card flex items-center gap-3 p-4">
               <Link to={`/home/user/${friend.id}`} className="flex min-w-0 flex-1 items-center gap-3">
                 <StudentAvatar name={friend.name} photoUrl={friend.profilePhotoUrl} />
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-slate-900">{friend.name}</p>
-                  <p className="text-xs text-slate-500">
+                  <p className="font-semibold text-slate-900 dark:text-zinc-50">{friend.name}</p>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400">
                     {friend.regNo} · {friend.department}
                   </p>
                 </div>
@@ -207,7 +246,9 @@ export function FriendsPage() {
                   setActionId(`u-${friend.id}`);
                   void unfriendUser(friend.id)
                     .then(() => load())
-                    .catch((err) => setError(err instanceof Error ? err.message : 'Unfriend failed'))
+                    .catch((err) =>
+                      setError(err instanceof Error ? err.message : 'Unfriend failed'),
+                    )
                     .finally(() => setActionId(null));
                 }}
               >
@@ -233,18 +274,19 @@ export function FriendsPage() {
         )}
       </section>
 
-      {blocked.length > 0 ? (
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-slate-900">Blocked ({blocked.length})</h2>
-          {blocked.map((user) => (
-            <div
-              key={user.id}
-              className="glass-card flex items-center gap-3 rounded-[24px] p-4 shadow-soft"
-            >
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-zinc-50">
+          Blocked users ({blocked.length})
+        </h2>
+        {blocked.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-zinc-400">No blocked users.</p>
+        ) : (
+          blocked.map((user) => (
+            <div key={user.id} className="premium-card flex items-center gap-3 p-4">
               <StudentAvatar name={user.name} photoUrl={user.profilePhotoUrl} />
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-slate-900">{user.name}</p>
-                <p className="text-xs text-slate-500">{user.regNo}</p>
+                <p className="font-semibold text-slate-900 dark:text-zinc-50">{user.name}</p>
+                <p className="text-xs text-slate-500 dark:text-zinc-400">{user.regNo}</p>
               </div>
               <Button
                 variant="secondary"
@@ -254,16 +296,18 @@ export function FriendsPage() {
                   setActionId(`ub-${user.id}`);
                   void unblockUser(user.id)
                     .then(() => load())
-                    .catch((err) => setError(err instanceof Error ? err.message : 'Unblock failed'))
+                    .catch((err) =>
+                      setError(err instanceof Error ? err.message : 'Unblock failed'),
+                    )
                     .finally(() => setActionId(null));
                 }}
               >
                 Unblock
               </Button>
             </div>
-          ))}
-        </section>
-      ) : null}
+          ))
+        )}
+      </section>
     </div>
   );
 }

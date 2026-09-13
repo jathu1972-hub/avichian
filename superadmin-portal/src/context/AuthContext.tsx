@@ -51,6 +51,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (profile) {
+        if (profile.role !== 'SUPER_ADMIN') {
+          setAccessToken(null);
+          flushSync(() => setUser(null));
+          return null;
+        }
         flushSync(() => setUser(profile));
         return profile;
       }
@@ -58,6 +63,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const res = await api<PublicUser>('/profile/me');
         const resolved = res.data ?? null;
+        if (!resolved || resolved.role !== 'SUPER_ADMIN') {
+          setAccessToken(null);
+          flushSync(() => setUser(null));
+          return null;
+        }
         flushSync(() => setUser(resolved));
         return resolved;
       } catch {
@@ -82,7 +92,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const res = await api<PublicUser>('/profile/me');
-      setUser(res.data ?? null);
+      const profile = res.data ?? null;
+      // Super Admin portal: reject non–Super Admin sessions (e.g. leftover student JWT)
+      if (!profile || profile.role !== 'SUPER_ADMIN') {
+        setAccessToken(null);
+        setUser(null);
+        return;
+      }
+      setUser(profile);
     } catch {
       setAccessToken(null);
       setUser(null);

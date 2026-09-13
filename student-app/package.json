@@ -11,10 +11,16 @@
     "preview": "vite preview --port 5173",
     "cap:sync": "npx cap sync",
     "cap:android": "npx cap open android",
-    "cap:ios": "npx cap open ios"
+    "cap:ios": "npx cap open ios",
+    "android:sync": "npm run build && npx cap sync android",
+    "android:open": "npm run android:sync && npx cap open android"
   },
   "dependencies": {
     "@avichian/shared": "*",
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/splash-screen": "^8.0.2",
     "appwrite": "^26.1.0",
     "framer-motion": "^12.16.0",
     "livekit-client": "^2.21.0",

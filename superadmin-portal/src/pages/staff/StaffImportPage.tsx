@@ -1,7 +1,7 @@
 import { Upload } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '../../components/ui/Button';
-import { parseApiJson, prefetchCsrfToken } from '../../lib/api';
+import { getAccessToken, parseApiJson, prefetchCsrfToken } from '../../lib/api';
 import { getApiBase } from '../../lib/config';
 
 export function StaffImportPage() {
@@ -27,7 +27,7 @@ export function StaffImportPage() {
         method: 'POST',
         credentials: 'include',
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('avichian_access_token') ?? ''}`,
+          Authorization: `Bearer ${getAccessToken() ?? ''}`,
           'X-CSRF-Token': csrfToken,
         },
         body: formData,

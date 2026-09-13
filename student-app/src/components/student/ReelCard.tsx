@@ -20,26 +20,33 @@ import { StudentAvatar } from './StudentAvatar';
 interface ReelCardProps {
   reel: ReelItem;
   active: boolean;
+  /** Centralized viewer preference — do not store mute per reel */
+  audioEnabled: boolean;
+  onAudioEnabledChange: (enabled: boolean) => void;
   onLike: (id: string) => void;
   onSave: (id: string) => void;
   onComment: (reel: ReelItem) => void;
   onMenu: (reel: ReelItem) => void;
   onShare: (reel: ReelItem) => void;
   onViewed?: (id: string) => void;
+  /** Prefetch metadata when this is the next reel */
+  preload?: boolean;
 }
 
 export function ReelCard({
   reel,
   active,
+  audioEnabled,
+  onAudioEnabledChange,
   onLike,
   onSave,
   onComment,
   onMenu,
   onShare,
   onViewed,
+  preload = false,
 }: ReelCardProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [muted, setMuted] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -47,6 +54,7 @@ export function ReelCard({
   const [heartBurst, setHeartBurst] = useState(false);
   const viewed = useRef(false);
   const lastTap = useRef(0);
+  const playGen = useRef(0);
 
   const src = resolveMediaUrl(reel.mediaUrl) ?? reel.mediaUrl;
   const type =
@@ -55,42 +63,103 @@ export function ReelCard({
       : 'video/mp4';
   const tags = reel.hashtags ?? [];
   const audioLabel = reel.audioName || 'Original audio';
+  const muted = !audioEnabled;
 
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    if (active) {
-      v.muted = muted;
-      void v
-        .play()
-        .then(() => {
-          setPlaying(true);
-          if (!viewed.current) {
-            viewed.current = true;
-            onViewed?.(reel.id);
-          }
-        })
-        .catch(() => setPlaying(false));
-    } else {
+    const gen = ++playGen.current;
+
+    if (!active) {
       v.pause();
       setPlaying(false);
+      return;
     }
-  }, [active, muted, src, reel.id, onViewed]);
 
-  // Preload slightly when becoming next/active
+    const applyAndPlay = async () => {
+      v.muted = muted;
+      try {
+        await v.play();
+        if (playGen.current !== gen) return;
+        setPlaying(true);
+        if (!viewed.current) {
+          viewed.current = true;
+          onViewed?.(reel.id);
+        }
+      } catch {
+        // Browser may block unmuted autoplay until a gesture — stay respectful.
+        if (playGen.current !== gen) return;
+        if (!muted) {
+          try {
+            v.muted = true;
+            await v.play();
+            if (playGen.current !== gen) return;
+            setPlaying(true);
+            // Keep audioEnabled preference; user already unmuted — next play often works.
+            // Immediately try again with sound after a short tick if still preferred.
+            window.setTimeout(() => {
+              const el = videoRef.current;
+              if (!el || playGen.current !== gen || !audioEnabled) return;
+              el.muted = false;
+              void el.play().catch(() => {
+                el.muted = true;
+              });
+            }, 0);
+          } catch {
+            setPlaying(false);
+          }
+        } else {
+          setPlaying(false);
+        }
+      }
+    };
+
+    void applyAndPlay();
+    return () => {
+      playGen.current += 1;
+    };
+  }, [active, muted, audioEnabled, src, reel.id, onViewed]);
+
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    v.preload = active ? 'auto' : 'metadata';
-  }, [active]);
+    if (active) v.preload = 'auto';
+    else if (preload) v.preload = 'auto';
+    else v.preload = 'none';
+  }, [active, preload]);
+
+  // Sync mute attribute when preference changes while active
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !active) return;
+    v.muted = muted;
+  }, [muted, active]);
 
   function togglePlay() {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) void v.play().then(() => setPlaying(true)).catch(() => undefined);
-    else {
+    if (v.paused) {
+      v.muted = muted;
+      void v
+        .play()
+        .then(() => setPlaying(true))
+        .catch(() => undefined);
+    } else {
       v.pause();
       setPlaying(false);
+    }
+  }
+
+  function toggleAudio(e: React.MouseEvent) {
+    e.stopPropagation();
+    const next = !audioEnabled;
+    onAudioEnabledChange(next);
+    const v = videoRef.current;
+    if (v && active) {
+      v.muted = !next;
+      if (next) {
+        void v.play().catch(() => undefined);
+      }
     }
   }
 
@@ -121,7 +190,7 @@ export function ReelCard({
         playsInline
         loop
         muted={muted}
-        preload={active ? 'auto' : 'metadata'}
+        preload={active || preload ? 'auto' : 'none'}
         poster={(() => {
           const raw = reel.coverUrl || reel.thumbnailUrl;
           if (!raw) return undefined;
@@ -186,8 +255,8 @@ export function ReelCard({
         </div>
       ) : null}
 
-      {/* Right rail */}
-      <div className="absolute bottom-32 right-2 z-20 flex flex-col items-center gap-4 sm:right-3 sm:gap-5">
+      {/* Right rail — safe from bottom nav */}
+      <div className="absolute bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] right-2 z-20 flex flex-col items-center gap-3.5 sm:bottom-32 sm:right-3 sm:gap-5">
         <Action
           label={String(reel.likeCount)}
           active={reel.likedByMe}
@@ -216,10 +285,7 @@ export function ReelCard({
         </Action>
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setMuted((m) => !m);
-          }}
+          onClick={toggleAudio}
           className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur"
           aria-label={muted ? 'Unmute' : 'Mute'}
         >
@@ -238,8 +304,7 @@ export function ReelCard({
         </button>
       </div>
 
-      {/* Left bottom meta */}
-      <div className="absolute bottom-0 left-0 right-16 z-20 space-y-2 p-4 pb-safe sm:right-20">
+      <div className="absolute bottom-[calc(0.5rem+env(safe-area-inset-bottom,0px))] left-0 right-16 z-20 space-y-2 p-4 sm:bottom-0 sm:right-20 sm:pb-safe">
         <Link
           to={`/home/user/${reel.author.id}`}
           className="inline-flex items-center gap-2"
@@ -267,7 +332,7 @@ export function ReelCard({
             </p>
           </div>
           {playing ? (
-            <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-white/50">
+            <span className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-white/50">
               <Pause size={10} /> live
             </span>
           ) : null}

@@ -14,6 +14,7 @@ import {
   Users,
   UsersRound,
   X,
+  Zap,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -28,7 +29,7 @@ import { IncomingCallBanner } from '../components/student/IncomingCallBanner';
 const mobileNav = [
   { to: '/home', icon: Home, label: 'Home', end: true },
   { to: '/home/search', icon: Search, label: 'Search' },
-  { to: '/home/create', icon: Plus, label: 'Upload', center: true },
+  { to: '/home/create', icon: Plus, label: 'Create', center: true },
   { to: '/home/chat', icon: MessageCircle, label: 'Chat' },
   { to: '/home/profile', icon: 'avatar' as const, label: 'Profile' },
 ];
@@ -38,6 +39,7 @@ const desktopNav = [
   { to: '/home/search', icon: Search, label: 'Search' },
   { to: '/home/reels', icon: Clapperboard, label: 'Reels' },
   { to: '/home/friends', icon: Users, label: 'Friends' },
+  { to: '/home/skill-match', icon: Zap, label: 'Skill Match' },
   { to: '/home/chat', icon: MessageCircle, label: 'Chat' },
   { to: '/home/events', icon: PartyPopper, label: 'Events' },
   { to: '/home/calendar', icon: CalendarDays, label: 'Calendar' },
@@ -67,8 +69,10 @@ function NavItem({
         to={item.to}
         onClick={onNavigate}
         className={({ isActive }) =>
-          `flex min-h-11 items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition ${
-            isActive ? 'bg-primary text-white shadow-float' : 'text-slate-600 hover:bg-primary/10 hover:text-primary dark:text-slate-300'
+          `group flex min-h-11 items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold tracking-tight transition-all ${
+            isActive
+              ? 'bg-gradient-to-r from-primary to-secondary text-white shadow-float'
+              : 'text-slate-600 hover:bg-primary/8 hover:text-primary dark:text-zinc-300 dark:hover:bg-white/5'
           } ${collapsed ? 'justify-center' : ''}`
         }
       >
@@ -85,12 +89,14 @@ function NavItem({
       end={item.end}
       onClick={onNavigate}
       className={({ isActive }) =>
-        `flex min-h-11 items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition ${
-          isActive ? 'bg-primary text-white shadow-float' : 'text-slate-600 hover:bg-primary/10 hover:text-primary dark:text-slate-300'
+        `flex min-h-11 items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold tracking-tight transition-all ${
+          isActive
+            ? 'bg-gradient-to-r from-primary to-secondary text-white shadow-float'
+            : 'text-slate-600 hover:bg-primary/8 hover:text-primary dark:text-zinc-300 dark:hover:bg-white/5'
         } ${collapsed ? 'justify-center' : ''}`
       }
     >
-      <Icon size={20} className="shrink-0" />
+      <Icon size={20} className="shrink-0 opacity-90" strokeWidth={1.9} />
       {!collapsed ? <span className="truncate">{item.label}</span> : <span className="sr-only">{item.label}</span>}
     </NavLink>
   );
@@ -117,7 +123,6 @@ export function StudentLayout() {
     }
     refreshUnread();
     const socket = connectSocket();
-    // Single path for new notifs — friend:request is already wrapped as notification server-side
     function onNew() {
       refreshUnread();
     }
@@ -129,16 +134,19 @@ export function StudentLayout() {
     socket.on('notification:read', onNew);
     socket.on('notification:deleted', onDeleted);
     socket.on('friend:accept', refreshUnread);
+    socket.on('skill-match:request', refreshUnread);
+    socket.on('skill-match:accept', refreshUnread);
     return () => {
       socket.off('notification', onNew);
       socket.off('notification:new', onNew);
       socket.off('notification:read', onNew);
       socket.off('notification:deleted', onDeleted);
       socket.off('friend:accept', refreshUnread);
+      socket.off('skill-match:request', refreshUnread);
+      socket.off('skill-match:accept', refreshUnread);
     };
   }, []);
 
-  // Lock page scroll only while mobile drawer is open; always restore after
   useBodyScrollLock(drawerOpen);
 
   async function handleLogout() {
@@ -147,21 +155,23 @@ export function StudentLayout() {
   }
 
   return (
-    <div className="app-shell bg-gradient-to-b from-slate-50 via-white to-primary/5 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+    <div className="app-shell">
       <IncomingCallBanner />
-      {/* Desktop / tablet sidebar */}
+      {/* Desktop sidebar */}
       <aside
-        className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/40 bg-white/80 pt-safe backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:flex"
+        className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-white/50 bg-white/70 pt-safe backdrop-blur-2xl dark:border-zinc-800 dark:bg-zinc-950/80 lg:flex"
         style={{ paddingLeft: 'max(0px, env(safe-area-inset-left))' }}
         aria-label="Main navigation"
       >
-        <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-5 dark:border-slate-800">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-secondary text-sm font-bold text-white shadow-float">
+        <div className="flex items-center gap-3 border-b border-slate-100/80 px-5 py-5 dark:border-zinc-800">
+          <div className="brand-mark flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-extrabold tracking-tight text-white">
             A
           </div>
           <div className="min-w-0">
-            <p className="font-display truncate text-base font-bold text-slate-900 dark:text-white">AVICHIAN</p>
-            <p className="truncate text-[11px] text-slate-500">
+            <p className="font-display truncate text-base font-extrabold tracking-tight text-slate-900 dark:text-white">
+              AVICHIAN
+            </p>
+            <p className="truncate text-[11px] font-medium text-slate-500 dark:text-zinc-400">
               {user?.department ?? 'Campus'}
               {isStaffRole(user?.role) ? ' · Staff' : ''}
             </p>
@@ -180,8 +190,10 @@ export function StudentLayout() {
             <NavLink
               to="/home/staff-tools"
               className={({ isActive }) =>
-                `flex min-h-11 items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium ${
-                  isActive ? 'bg-primary text-white' : 'text-slate-600 hover:bg-primary/10'
+                `flex min-h-11 items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold ${
+                  isActive
+                    ? 'bg-gradient-to-r from-primary to-secondary text-white'
+                    : 'text-slate-600 hover:bg-primary/8'
                 }`
               }
             >
@@ -190,18 +202,18 @@ export function StudentLayout() {
             </NavLink>
           ) : null}
         </nav>
-        <div className="border-t border-slate-100 p-3 dark:border-slate-800">
+        <div className="border-t border-slate-100/80 p-3 dark:border-zinc-800">
           <div className="mb-2 flex items-center gap-3 rounded-2xl px-2 py-2">
             <StudentAvatar name={user?.name ?? 'Me'} photoUrl={user?.profilePhotoUrl} size="sm" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{user?.name}</p>
+              <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{user?.name}</p>
               <p className="truncate text-[11px] text-slate-500">{user?.regNo}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => void handleLogout()}
-            className="flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium text-error hover:bg-error/10"
+            className="flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold text-error hover:bg-error/10"
           >
             <LogOut size={18} />
             Sign out
@@ -214,16 +226,21 @@ export function StudentLayout() {
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
           <button
             type="button"
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             aria-label="Close menu"
             onClick={() => setDrawerOpen(false)}
           />
-          <aside className="absolute inset-y-0 left-0 flex w-[min(18rem,88vw)] flex-col bg-white shadow-float dark:bg-slate-900 pt-safe">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4 dark:border-slate-800">
-              <p className="font-display font-bold text-slate-900 dark:text-white">Menu</p>
+          <aside className="absolute inset-y-0 left-0 flex w-[min(18.5rem,90vw)] flex-col bg-white/95 shadow-float backdrop-blur-2xl dark:bg-zinc-950 pt-safe">
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4 dark:border-zinc-800">
+              <div className="flex items-center gap-2">
+                <div className="brand-mark flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold text-white">
+                  A
+                </div>
+                <p className="font-display font-extrabold text-slate-900 dark:text-white">Menu</p>
+              </div>
               <button
                 type="button"
-                className="touch-target flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="touch-target flex items-center justify-center rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-800"
                 onClick={() => setDrawerOpen(false)}
                 aria-label="Close"
               >
@@ -245,13 +262,12 @@ export function StudentLayout() {
         </div>
       ) : null}
 
-      {/* Main column — grows with content; document scrolls (no overflow trap) */}
       <div className="app-shell-main-col lg:pl-64">
-        <header className="sticky top-0 z-20 border-b border-white/40 bg-white/80 pt-safe backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/85">
+        <header className="sticky top-0 z-20 glass-nav border-b border-white/40 pt-safe dark:border-zinc-800/80">
           <div className="mx-auto flex w-full max-w-6xl items-center gap-2 px-safe py-2.5 sm:gap-3 sm:py-3">
             <button
               type="button"
-              className="touch-target flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 lg:hidden dark:text-slate-300 dark:hover:bg-slate-800"
+              className="touch-target flex items-center justify-center rounded-2xl text-slate-600 hover:bg-primary/10 lg:hidden dark:text-zinc-300"
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
             >
@@ -259,19 +275,18 @@ export function StudentLayout() {
             </button>
 
             <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-secondary text-sm font-bold text-white shadow-float lg:hidden">
+              <div className="brand-mark flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-sm font-extrabold text-white lg:hidden">
                 A
               </div>
               <div className="min-w-0 lg:hidden">
-                <p className="truncate font-display text-sm font-bold text-slate-900 dark:text-white sm:text-base">
+                <p className="truncate font-display text-sm font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-base">
                   AVICHIAN
                 </p>
-                <p className="truncate text-[10px] text-slate-500 sm:text-[11px]">
+                <p className="truncate text-[10px] font-medium text-slate-500 sm:text-[11px]">
                   {user?.department ?? 'Campus'}
                 </p>
               </div>
 
-              {/* Desktop search */}
               <form
                 className="relative ml-auto hidden w-full max-w-md flex-1 md:block lg:ml-0"
                 onSubmit={(e) => {
@@ -284,11 +299,14 @@ export function StudentLayout() {
                   }
                 }}
               >
-                <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <Search
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                  size={18}
+                />
                 <input
                   name="q"
-                  placeholder="Search students…"
-                  className="min-h-11 w-full rounded-full border border-slate-200 bg-white/90 py-2 pl-10 pr-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-slate-700 dark:bg-slate-800"
+                  placeholder="Search students, communities…"
+                  className="min-h-11 w-full rounded-full border border-slate-200/80 bg-white/90 py-2.5 pl-11 pr-4 text-sm font-medium text-slate-900 shadow-soft outline-none transition placeholder:text-slate-500 focus:border-primary focus:ring-4 focus:ring-primary/12 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-50 dark:placeholder:text-zinc-400"
                 />
               </form>
             </div>
@@ -312,20 +330,27 @@ export function StudentLayout() {
                 </NavLink>
               ) : null}
               <NavLink
+                to="/home/communities"
+                className="touch-target hidden items-center justify-center rounded-full text-slate-500 hover:bg-primary/10 hover:text-primary sm:flex"
+                aria-label="Communities"
+              >
+                <UsersRound size={20} />
+              </NavLink>
+              <NavLink
                 to="/home/notifications"
-                className="touch-target relative flex items-center justify-center rounded-full text-slate-500 hover:bg-primary/10 hover:text-primary dark:text-slate-300"
+                className="touch-target relative flex items-center justify-center rounded-full text-slate-500 hover:bg-primary/10 hover:text-primary dark:text-zinc-300"
                 aria-label="Notifications"
               >
                 <Bell size={20} />
                 {notifUnread > 0 ? (
-                  <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold text-white">
+                  <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold text-white shadow-soft">
                     {notifUnread > 9 ? '9+' : notifUnread}
                   </span>
                 ) : null}
               </NavLink>
               <NavLink
                 to="/home/profile"
-                className="touch-target hidden items-center justify-center rounded-full sm:flex"
+                className="touch-target hidden items-center justify-center rounded-full ring-2 ring-primary/15 sm:flex"
                 aria-label="Profile"
               >
                 <StudentAvatar name={user?.name ?? 'Me'} photoUrl={user?.profilePhotoUrl} size="sm" />
@@ -333,7 +358,7 @@ export function StudentLayout() {
               <button
                 type="button"
                 onClick={() => void handleLogout()}
-                className="touch-target flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-primary dark:hover:bg-slate-800"
+                className="touch-target flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-primary dark:hover:bg-zinc-800"
                 aria-label="Sign out"
               >
                 <LogOut size={18} />
@@ -343,7 +368,7 @@ export function StudentLayout() {
 
           {searchOpen ? (
             <form
-              className="border-t border-slate-100 px-safe py-2 md:hidden dark:border-slate-800"
+              className="border-t border-slate-100/80 px-safe py-2 md:hidden dark:border-zinc-800"
               onSubmit={(e) => {
                 e.preventDefault();
                 const q = new FormData(e.currentTarget).get('q');
@@ -357,7 +382,7 @@ export function StudentLayout() {
                 name="q"
                 autoFocus
                 placeholder="Search students…"
-                className="min-h-11 w-full rounded-full border border-slate-200 bg-white px-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-slate-700 dark:bg-slate-800"
+                className="min-h-11 w-full rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-900 outline-none placeholder:text-slate-500 focus:border-primary focus:ring-4 focus:ring-primary/12 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder:text-zinc-400"
               />
             </form>
           ) : null}
@@ -367,12 +392,9 @@ export function StudentLayout() {
           <Outlet />
         </main>
 
-        {/* Mobile bottom navigation — fixed; content padded via main-with-bottom-nav */}
-        <nav
-          className="bottom-nav fixed bottom-0 left-0 right-0 z-30 border-t border-white/50 bg-white/95 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 lg:hidden"
-          aria-label="Bottom navigation"
-        >
-          <div className="mx-auto flex max-w-lg items-end justify-between px-1 py-1.5">
+        {/* Floating glass bottom navigation */}
+        <nav className="bottom-nav fixed bottom-0 left-0 right-0 z-30 lg:hidden" aria-label="Bottom navigation">
+          <div className="bottom-nav-inner glass-nav flex items-end justify-between gap-0.5 px-1.5 py-1.5 shadow-float">
             {mobileNav.map((item) => {
               if (item.icon === 'avatar') {
                 return (
@@ -380,35 +402,65 @@ export function StudentLayout() {
                     key={item.to}
                     to={item.to}
                     className={({ isActive }) =>
-                      `flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-1 text-[10px] font-medium sm:text-[11px] ${
-                        isActive ? 'text-primary' : 'text-slate-500 dark:text-slate-400'
+                      `flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-2xl px-1 py-1 text-[10px] font-semibold transition sm:text-[11px] ${
+                        isActive ? 'text-primary' : 'text-slate-500 dark:text-zinc-400'
                       }`
                     }
                   >
-                    <StudentAvatar name={user?.name ?? 'Me'} photoUrl={user?.profilePhotoUrl} size="sm" />
-                    <span className="truncate">{item.label}</span>
+                    {({ isActive }) => (
+                      <>
+                        <span
+                          className={`rounded-full p-0.5 ${isActive ? 'ring-2 ring-primary/40' : ''}`}
+                        >
+                          <StudentAvatar
+                            name={user?.name ?? 'Me'}
+                            photoUrl={user?.profilePhotoUrl}
+                            size="sm"
+                          />
+                        </span>
+                        <span className="truncate">{item.label}</span>
+                      </>
+                    )}
                   </NavLink>
                 );
               }
               const Icon = item.icon;
+              if (item.center) {
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className="nav-fab relative -mt-6 flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-white transition active:scale-95"
+                    aria-label={item.label}
+                  >
+                    <Icon size={24} strokeWidth={2.25} />
+                  </NavLink>
+                );
+              }
               return (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   end={item.end}
                   className={({ isActive }) =>
-                    `flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-2xl px-1 py-1 text-[10px] font-medium transition sm:text-[11px] ${
-                      item.center
-                        ? '-mt-4 rounded-full bg-primary p-3.5 text-white shadow-float hover:bg-primary/90'
-                        : isActive
-                          ? 'text-primary'
-                          : 'text-slate-500 hover:text-primary dark:text-slate-400'
+                    `flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-2xl px-1 py-1 text-[10px] font-semibold transition sm:text-[11px] ${
+                      isActive ? 'text-primary' : 'text-slate-500 hover:text-primary dark:text-zinc-400'
                     }`
                   }
                   aria-label={item.label}
                 >
-                  <Icon size={item.center ? 22 : 20} />
-                  {!item.center ? <span className="truncate">{item.label}</span> : null}
+                  {({ isActive }) => (
+                    <>
+                      <span
+                        className={`flex h-8 w-8 items-center justify-center rounded-xl transition ${
+                          isActive ? 'bg-primary/12 text-primary' : ''
+                        }`}
+                      >
+                        <Icon size={20} strokeWidth={isActive ? 2.25 : 1.9} />
+                      </span>
+                      <span className="truncate">{item.label}</span>
+                    </>
+                  )}
                 </NavLink>
               );
             })}

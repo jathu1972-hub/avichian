@@ -120,12 +120,23 @@ async function ensureCsrf(forceRefresh = false): Promise<string> {
   return prefetchCsrfToken();
 }
 
+/**
+ * Super Admin portal uses a dedicated token key so a student session
+ * (same browser / shared host experiments) cannot authorize /super-admin APIs.
+ */
+const SA_ACCESS_TOKEN_KEY = 'avichian_sa_access_token';
+/** Legacy key — migrate once then remove so old sessions keep working */
+const LEGACY_ACCESS_TOKEN_KEY = 'avichian_access_token';
+
 export function setAccessToken(token: string | null) {
   if (token) {
-    localStorage.setItem('avichian_access_token', token);
+    localStorage.setItem(SA_ACCESS_TOKEN_KEY, token);
+    // Drop legacy student-portal key to avoid accidental reuse of the wrong JWT
+    localStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
     scheduleProactiveRefresh(token);
   } else {
-    localStorage.removeItem('avichian_access_token');
+    localStorage.removeItem(SA_ACCESS_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
     if (proactiveRefreshTimer) {
       window.clearTimeout(proactiveRefreshTimer);
       proactiveRefreshTimer = null;
@@ -134,7 +145,16 @@ export function setAccessToken(token: string | null) {
 }
 
 export function getAccessToken(): string | null {
-  return localStorage.getItem('avichian_access_token');
+  const sa = localStorage.getItem(SA_ACCESS_TOKEN_KEY);
+  if (sa) return sa;
+  // One-time migration from older Super Admin builds
+  const legacy = localStorage.getItem(LEGACY_ACCESS_TOKEN_KEY);
+  if (legacy) {
+    localStorage.setItem(SA_ACCESS_TOKEN_KEY, legacy);
+    localStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+    return legacy;
+  }
+  return null;
 }
 
 /** Refresh access token ~60s before JWT exp (silent). */
@@ -192,7 +212,7 @@ export async function refreshAccessToken(): Promise<string | null> {
 
 // Kick proactive refresh for existing session after reload
 if (typeof window !== 'undefined') {
-  const existing = localStorage.getItem('avichian_access_token');
+  const existing = getAccessToken();
   if (existing) scheduleProactiveRefresh(existing);
 }
 

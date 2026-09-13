@@ -174,11 +174,14 @@ export function StoryViewer({ group, onClose, onStoryRemoved, toast }: StoryView
   }
 
   const ownerMenu = [
-    { id: 'delete', label: 'Delete Story', danger: true, onClick: () => setConfirmDelete(true) },
-    { id: 'save', label: 'Save Story', onClick: saveStory },
-    { id: 'share', label: 'Share Story', onClick: shareStory },
     {
-      id: 'insights',
+      id: 'delete',
+      label: 'Delete Story',
+      danger: true,
+      onClick: () => setConfirmDelete(true),
+    },
+    {
+      id: 'viewers',
       label: 'Viewers',
       onClick: () => {
         void fetchStoryViewers(activeStory.id)
@@ -191,6 +194,9 @@ export function StoryViewer({ group, onClose, onStoryRemoved, toast }: StoryView
           .catch((e) => toast?.(e instanceof Error ? e.message : 'Could not load viewers'));
       },
     },
+    { id: 'save', label: 'Save Story', onClick: saveStory },
+    { id: 'share', label: 'Share Story', onClick: shareStory },
+    { id: 'cancel', label: 'Cancel', onClick: () => undefined },
   ];
 
   const viewerMenu = [
@@ -231,6 +237,7 @@ export function StoryViewer({ group, onClose, onStoryRemoved, toast }: StoryView
           .catch((e) => toast?.(e instanceof Error ? e.message : 'Hide failed'));
       },
     },
+    { id: 'cancel', label: 'Cancel', onClick: () => undefined },
   ];
 
   function togglePlay() {
@@ -260,14 +267,15 @@ export function StoryViewer({ group, onClose, onStoryRemoved, toast }: StoryView
         aria-modal="true"
         aria-label="Story viewer"
       >
-        <div className="absolute right-4 top-4 z-20 flex items-center gap-1">
-          <div className="rounded-full bg-white/10 [&_button]:text-white [&_button:hover]:bg-white/20">
-            <ContentMenu actions={group.user.isMe ? ownerMenu : viewerMenu} />
-          </div>
+        <div className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-30 flex items-center gap-1.5 sm:right-4 sm:top-4">
+          <ContentMenu
+            variant="overlay"
+            actions={group.user.isMe ? ownerMenu : viewerMenu}
+          />
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full bg-white/10 p-2 text-white"
+            className="rounded-full bg-white/15 p-2.5 text-white"
             aria-label="Close story"
           >
             <X size={20} />
@@ -506,8 +514,9 @@ export function StoryViewer({ group, onClose, onStoryRemoved, toast }: StoryView
         <ConfirmDialog
           open={confirmDelete}
           title="Delete this story?"
-          message="This action cannot be undone."
+          message="This story will be permanently removed."
           confirmLabel="Delete"
+          cancelLabel="Cancel"
           loading={busy}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => void handleDeleteStory()}

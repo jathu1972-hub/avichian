@@ -14,7 +14,7 @@ services:
     region: singapore
     rootDir: .
     buildCommand: npm ci && npm run build -w @avichian/shared && npx prisma generate --schema=backend/prisma/schema.prisma && npm run build -w backend
-    startCommand: cd backend && npx prisma migrate deploy || npx prisma db push; npm start
+    startCommand: cd backend && (npx prisma migrate deploy || npx prisma db push) && npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
@@ -36,7 +36,11 @@ services:
       - key: ENCRYPTION_KEY
         generateValue: true
       - key: FRONTEND_URLS
-        sync: false
+        value: https://app.avichian.com,https://admin.avichian.com,https://avichian-student.netlify.app,https://avichian-superadmin.netlify.app,https://avichian.netlify.app,https://jathu1972-hub.github.io
+      - key: FRONTEND_URL
+        value: https://app.avichian.com
+      - key: ADMIN_URL
+        value: https://admin.avichian.com
       - key: PUBLIC_API_URL
         sync: false
       - key: ACCESS_TOKEN_EXPIRY

@@ -6,12 +6,14 @@ import { validateBody } from '../middleware/validate.js';
 import {
   deleteMessage,
   editMessage,
+  hideConversationForUser,
   listConversations,
   listMessages,
   markConversationRead,
   openChatWithPeer,
   sendMessage,
 } from '../services/chat.service.js';
+import { blockUser } from '../services/friends.service.js';
 import { emitChatEvent, emitToUser } from '../socket.js';
 import { routeParam } from '../utils/route-param.js';
 
@@ -139,6 +141,46 @@ chatRouter.delete('/messages/:messageId', async (req: AuthRequest, res, next) =>
     }
     emitToUser(req.user!.id, 'chat:message:deleted', message);
     res.json({ success: true, data: message });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** Hide conversation from my list only (does not affect peer). */
+chatRouter.delete('/conversations/:id', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await hideConversationForUser(req.user!.id, routeParam(req.params.id));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+chatRouter.post('/conversations/:id/hide', async (req: AuthRequest, res, next) => {
+  try {
+    const data = await hideConversationForUser(req.user!.id, routeParam(req.params.id));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+chatRouter.post('/conversations/:id/block-peer', async (req: AuthRequest, res, next) => {
+  try {
+    const conversationId = routeParam(req.params.id);
+    const { prisma } = await import('../lib/prisma.js');
+    const members = await prisma.conversationMember.findMany({
+      where: { conversationId },
+      select: { userId: true },
+    });
+    const peerId = members.find((m) => m.userId !== req.user!.id)?.userId;
+    if (!peerId) {
+      res.status(404).json({ success: false, error: 'Peer not found' });
+      return;
+    }
+    await blockUser(req.user!.id, peerId);
+    await hideConversationForUser(req.user!.id, conversationId);
+    res.json({ success: true, data: { blocked: true, peerId, conversationId } });
   } catch (error) {
     next(error);
   }

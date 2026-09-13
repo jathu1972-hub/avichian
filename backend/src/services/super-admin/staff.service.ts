@@ -36,10 +36,13 @@ export async function listStaff(params: { search?: string; departmentId?: string
     department: s.department.name,
     departmentId: s.departmentId,
     title: s.title,
+    designation: s.title,
     status: s.user.accountStatus,
     active: s.active,
     online: s.user.online,
-    lastLoginAt: s.user.lastLoginAt,
+    lastLoginAt: s.user.lastLoginAt?.toISOString() ?? null,
+    createdAt: s.createdAt.toISOString(),
+    forcePasswordChange: s.user.forcePasswordChange,
   }));
 }
 
@@ -71,6 +74,8 @@ export async function createStaff(
       mobileEnc: encryptField(mobile),
       role: 'STAFF',
       departmentId: data.departmentId,
+      accountStatus: 'ACTIVE',
+      forcePasswordChange: true,
       profile: { create: { name: data.name } },
       staff: {
         create: {

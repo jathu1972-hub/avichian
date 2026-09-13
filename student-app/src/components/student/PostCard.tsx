@@ -3,6 +3,7 @@ import { Heart, MessageCircle } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { FeedPost, PostVisibility } from '../../types/social';
+import { PostComments } from './PostComments';
 import {
   archivePost,
   deletePost,
@@ -46,6 +47,8 @@ export function PostCard({ post, onLike, liking, onRemoved, onUpdated, toast }: 
   const [editVisibility, setEditVisibility] = useState(false);
   const [visibility, setVisibility] = useState<PostVisibility>(post.visibility);
   const [reportOpen, setReportOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentCount, setCommentCount] = useState(post.commentCount ?? 0);
 
   async function handleDelete() {
     setBusy(true);
@@ -147,23 +150,24 @@ export function PostCard({ post, onLike, liking, onRemoved, onUpdated, toast }: 
     <>
       <motion.article
         layout
-        initial={{ opacity: 0, y: 12 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.98 }}
-      className="glass-card min-w-0 overflow-hidden rounded-[28px] shadow-soft"
-    >
-      <div className="flex min-w-0 items-center gap-2 p-3 sm:gap-3 sm:p-4">
-          <Link to={`/home/user/${post.author.id}`}>
+        transition={{ type: 'spring', stiffness: 280, damping: 28 }}
+        className="premium-card min-w-0 overflow-hidden"
+      >
+        <div className="flex min-w-0 items-center gap-2.5 p-3.5 sm:gap-3 sm:p-4">
+          <Link to={`/home/user/${post.author.id}`} className="shrink-0">
             <StudentAvatar name={post.author.name} photoUrl={post.author.profilePhotoUrl} />
           </Link>
           <div className="min-w-0 flex-1">
             <Link
               to={`/home/user/${post.author.id}`}
-              className="font-semibold text-slate-900 hover:text-primary"
+              className="font-bold tracking-tight text-slate-900 hover:text-primary dark:text-white"
             >
               {post.author.name}
             </Link>
-            <p className="text-xs text-slate-500">
+            <p className="text-[11px] font-medium text-slate-500 dark:text-zinc-400">
               {post.author.regNo} · {timeAgo(post.createdAt)} · {post.visibility}
             </p>
           </div>
@@ -189,7 +193,7 @@ export function PostCard({ post, onLike, liking, onRemoved, onUpdated, toast }: 
           })()
         ) : null}
 
-        <div className="min-w-0 space-y-2 p-3 sm:p-4">
+        <div className="min-w-0 space-y-3 p-3.5 sm:p-4">
           {editCaption ? (
             <div className="space-y-2">
               <textarea
@@ -197,19 +201,19 @@ export function PostCard({ post, onLike, liking, onRemoved, onUpdated, toast }: 
                 onChange={(e) => setCaption(e.target.value)}
                 rows={3}
                 maxLength={2000}
-                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                className="w-full rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
               />
               <div className="flex gap-2">
-                <button type="button" className="rounded-full bg-primary px-3 py-1 text-xs text-white" onClick={() => void saveCaption()}>
+                <button type="button" className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white" onClick={() => void saveCaption()}>
                   Save
                 </button>
-                <button type="button" className="rounded-full bg-slate-100 px-3 py-1 text-xs" onClick={() => setEditCaption(false)}>
+                <button type="button" className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold dark:bg-zinc-800" onClick={() => setEditCaption(false)}>
                   Cancel
                 </button>
               </div>
             </div>
           ) : post.caption ? (
-            <p className="text-sm leading-relaxed text-slate-700">{post.caption}</p>
+            <p className="text-sm leading-relaxed text-slate-700 dark:text-zinc-300">{post.caption}</p>
           ) : null}
 
           {editVisibility ? (
@@ -234,22 +238,41 @@ export function PostCard({ post, onLike, liking, onRemoved, onUpdated, toast }: 
             </div>
           ) : null}
 
-          <div className="flex items-center gap-4">
-            <button
+          <div className="flex items-center gap-1 border-t border-slate-100/80 pt-2 dark:border-zinc-800">
+            <motion.button
               type="button"
               disabled={liking}
+              whileTap={{ scale: 0.88 }}
               onClick={() => onLike(post.id)}
-              className={`inline-flex items-center gap-1.5 text-sm font-medium transition ${post.likedByMe ? 'text-error' : 'text-slate-500 hover:text-error'}`}
+              className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition ${
+                post.likedByMe
+                  ? 'bg-error/10 text-error'
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-error dark:hover:bg-zinc-800'
+              }`}
+              aria-label={post.likedByMe ? 'Unlike' : 'Like'}
             >
-              <Heart size={18} fill={post.likedByMe ? 'currentColor' : 'none'} />
+              <Heart size={18} fill={post.likedByMe ? 'currentColor' : 'none'} strokeWidth={2} />
               {post.likeCount}
+            </motion.button>
+            <button
+              type="button"
+              onClick={() => setCommentsOpen(true)}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-slate-500 hover:bg-slate-100 hover:text-primary dark:hover:bg-zinc-800"
+              aria-label="Comments"
+            >
+              <MessageCircle size={18} strokeWidth={2} />
+              {commentCount}
             </button>
-            <span className="inline-flex items-center gap-1.5 text-sm text-slate-400">
-              <MessageCircle size={18} />
-            </span>
           </div>
         </div>
       </motion.article>
+
+      <PostComments
+        postId={post.id}
+        open={commentsOpen}
+        onClose={() => setCommentsOpen(false)}
+        onCountChange={setCommentCount}
+      />
 
       <ConfirmDialog
         open={confirmDelete}
