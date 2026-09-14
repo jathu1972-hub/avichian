@@ -87,7 +87,7 @@ settingsRouter.put(
   '/appearance',
   validateBody(
     z.object({
-      theme: z.enum(['light', 'dark', 'system']).optional(),
+      theme: z.enum(['default', 'football', 'magic', 'hero', 'glam']).optional(),
       accentColor: z.string().max(40).optional(),
       fontScale: z.enum(['small', 'medium', 'large']).optional(),
     }),

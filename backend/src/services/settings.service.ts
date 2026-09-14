@@ -22,7 +22,7 @@ const DEFAULT_SETTINGS = {
   notifyAnnouncements: true,
   notifyReminders: true,
   pushEnabled: true,
-  theme: 'system',
+  theme: 'default',
   accentColor: 'blue',
   fontScale: 'medium',
 } as const;
@@ -191,7 +191,7 @@ export async function updateAppearanceSettings(
   data: Partial<{ theme: string; accentColor: string; fontScale: string }>,
 ) {
   await ensureSettings(userId);
-  if (data.theme && !['light', 'dark', 'system'].includes(data.theme)) {
+  if (data.theme && !['default', 'football', 'magic', 'hero', 'glam'].includes(data.theme)) {
     throw new AppError(400, 'Invalid theme');
   }
   const row = await prisma.userSettings.update({

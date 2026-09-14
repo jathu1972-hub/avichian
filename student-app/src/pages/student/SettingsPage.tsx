@@ -15,6 +15,7 @@ import {
   User,
   X,
   KeyRound,
+  Palette,
   Volume2,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -30,7 +31,9 @@ import {
   logoutAllDevices,
   updateNotifications,
   updatePrivacy,
+  updateAppearance,
 } from '../../lib/settings';
+import { applyTheme, AVICHIAN_THEMES, type AvichianTheme } from '../../lib/theme';
 import {
   getRingtoneDisplayName,
   isRingtoneEnabled,
@@ -45,6 +48,7 @@ type SectionId =
   | 'account'
   | 'privacy'
   | 'notifications'
+  | 'appearance'
   | 'calls'
   | 'security'
   | 'storage'
@@ -104,9 +108,7 @@ export function SettingsPage() {
     try {
       const bundle = await fetchSettings();
       setData(bundle);
-      // App is dark-only — never apply light/system theme from server prefs
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('student-theme', 'dark');
+      applyTheme(bundle.appearance.theme);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings');
     } finally {
@@ -147,6 +149,22 @@ export function SettingsPage() {
     } catch {
       setData((d) => (d ? { ...d, notifications: prev } : d));
       flash('Could not save notification preference');
+    }
+  }
+
+  async function selectTheme(theme: AvichianTheme) {
+    if (!data) return;
+    const previous = data.appearance.theme;
+    setData({ ...data, appearance: { ...data.appearance, theme } });
+    applyTheme(theme);
+    try {
+      const appearance = await updateAppearance({ theme });
+      setData((current) => (current ? { ...current, appearance } : current));
+      flash(`${theme === 'default' ? 'Default' : theme[0].toUpperCase() + theme.slice(1)} theme saved`);
+    } catch (err) {
+      setData((current) => (current ? { ...current, appearance: { ...current.appearance, theme: previous } } : current));
+      applyTheme(previous);
+      flash(err instanceof Error ? err.message : 'Could not save theme preference');
     }
   }
 
@@ -378,6 +396,19 @@ export function SettingsPage() {
         rows: [],
         custom: 'calls' as const,
         keywords: 'ringtone call voice video vibration incoming',
+      },
+      {
+        id: 'appearance' as SectionId,
+        title: 'Appearance',
+        icon: Palette,
+        accent: 'from-violet-500 to-indigo-600',
+        rows: AVICHIAN_THEMES.map((theme) => ({
+          label: theme === 'default' ? 'Default' : theme[0].toUpperCase() + theme.slice(1),
+          desc: theme === 'default' ? 'White, graphite and AVICHIAN violet' : `Use the ${theme} visual world`,
+          onClick: () => void selectTheme(theme),
+          keywords: `theme ${theme} appearance`,
+        })),
+        keywords: 'theme default football magic hero glam',
       },
       {
         id: 'security' as SectionId,

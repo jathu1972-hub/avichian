@@ -392,6 +392,69 @@ select {
   }
 }
 
+/* ── Theme worlds: presentation tokens only; the API/data layer is untouched. ── */
+html[data-av-theme] {
+  color-scheme: light;
+  --color-primary: #6657e8;
+  --color-primary-soft: #7c6ff0;
+  --color-secondary: #22243a;
+  --color-accent: #38a3f1;
+  --color-background: #f7f7fb;
+  --color-card: #ffffff;
+  --color-ink: #1b1c27;
+  --color-ink-soft: #4d5064;
+  --color-muted: #74778c;
+  --av-bg: #f7f7fb;
+  --av-surface: rgba(255, 255, 255, 0.88);
+  --av-border: rgba(36, 38, 59, 0.09);
+}
+
+html[data-av-theme] body {
+  background:
+    radial-gradient(900px 460px at 0% -10%, rgba(124, 111, 240, 0.16), transparent 58%),
+    radial-gradient(700px 400px at 100% 0%, rgba(56, 163, 241, 0.12), transparent 54%),
+    var(--av-bg);
+  color: var(--color-ink);
+}
+
+html[data-av-theme] .glass-card,
+html[data-av-theme] .premium-card {
+  background: var(--av-surface);
+  border-color: var(--av-border);
+  box-shadow: 0 10px 30px rgba(36, 38, 59, 0.08);
+  color: var(--color-ink);
+}
+
+html[data-av-theme] .glass-nav {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(36, 38, 59, 0.1);
+  color: var(--color-ink);
+  box-shadow: 0 12px 34px rgba(36, 38, 59, 0.13);
+}
+
+html[data-av-theme='football'] {
+  --color-primary: #187a43;
+  --color-primary-soft: #35b763;
+  --color-secondary: #102b1b;
+  --color-accent: #d4a72c;
+  --av-bg: #edf5eb;
+  --av-surface: rgba(248, 255, 246, 0.88);
+}
+
+html[data-av-theme='football'] body {
+  background: linear-gradient(90deg, rgba(24, 122, 67, 0.035) 1px, transparent 1px) 0 0/38px 38px,
+    radial-gradient(800px 440px at 50% -15%, rgba(212, 167, 44, 0.18), transparent 58%), var(--av-bg);
+}
+
+html[data-av-theme='magic'], html[data-av-theme='hero'] { color-scheme: dark; }
+html[data-av-theme='magic'] { --color-primary: #aa78ff; --color-primary-soft: #c59aff; --color-secondary: #24124a; --color-accent: #58d5ff; --av-bg: #100c23; --av-surface: rgba(31, 23, 59, 0.82); --av-border: rgba(201, 173, 255, 0.16); }
+html[data-av-theme='hero'] { --color-primary: #4da3ff; --color-primary-soft: #77bbff; --color-secondary: #11192d; --color-accent: #70e2ff; --av-bg: #0b1020; --av-surface: rgba(17, 25, 45, 0.84); --av-border: rgba(112, 226, 255, 0.16); }
+html[data-av-theme='magic'] body, html[data-av-theme='hero'] body { color: #f7f7ff; background: radial-gradient(820px 460px at 50% -10%, color-mix(in srgb, var(--color-primary) 23%, transparent), transparent 62%), var(--av-bg); }
+html[data-av-theme='magic'] .glass-nav, html[data-av-theme='hero'] .glass-nav { background: rgba(12, 16, 33, 0.82); border-color: var(--av-border); color: #f7f7ff; }
+
+html[data-av-theme='glam'] { --color-primary: #e5489a; --color-primary-soft: #f46eb5; --color-secondary: #48142f; --color-accent: #f1b5d4; --av-bg: #fff6fa; --av-surface: rgba(255, 255, 255, 0.83); --av-border: rgba(229, 72, 154, 0.13); }
+html[data-av-theme='glam'] body { background: radial-gradient(700px 400px at 5% 0%, rgba(244, 110, 181, 0.22), transparent 58%), radial-gradient(580px 360px at 100% 15%, rgba(241, 181, 212, 0.42), transparent 58%), var(--av-bg); }
+
 /* ── AVICHIAN dark-only theme tokens ── */
 :root {
   --dark-bg: #09090b;
@@ -636,7 +699,8 @@ html.dark {
   .chat-thread {
     height: auto !important;
     min-height: calc(100dvh - var(--header-h) - var(--bottom-nav-h) - 1.25rem) !important;
-    max-height: calc(100dvh - var(--header-h) - var(--bottom-nav-h) - 1.25rem) !important;
+    /* The document, rather than a fixed viewport box, owns mobile scrolling. */
+    max-height: none !important;
     border-radius: 1.25rem;
   }
 }
