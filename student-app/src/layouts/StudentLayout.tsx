@@ -25,6 +25,7 @@ import { fetchNotifications } from '../lib/social';
 import { connectSocket } from '../lib/socket';
 import { StudentAvatar } from '../components/student/StudentAvatar';
 import { IncomingCallBanner } from '../components/student/IncomingCallBanner';
+import { ThemeDecoration } from '../components/ThemeDecoration';
 
 const mobileNav = [
   { to: '/home', icon: Home, label: 'Home', end: true },
@@ -156,6 +157,7 @@ export function StudentLayout() {
 
   return (
     <div className="app-shell">
+      <ThemeDecoration />
       <IncomingCallBanner />
       {/* Desktop sidebar */}
       <aside

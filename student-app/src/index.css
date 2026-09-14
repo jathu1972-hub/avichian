@@ -534,6 +534,53 @@ html[data-av-theme='glam'] body { background: radial-gradient(700px 400px at 5% 
   box-shadow: 0 16px 30px rgba(36, 38, 59, 0.18);
 }
 
+/* Theme atmosphere: decorative only, never an input or scrolling layer. */
+.theme-decoration {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+
+.app-shell > :not(.theme-decoration) { position: relative; z-index: 1; }
+
+.theme-decoration > * { display: none; }
+.theme-orb, .theme-rune, .theme-grid { position: absolute; pointer-events: none; }
+
+html[data-av-theme='football'] .theme-orb,
+html[data-av-theme='magic'] .theme-orb,
+html[data-av-theme='hero'] .theme-orb,
+html[data-av-theme='glam'] .theme-orb { display: block; }
+
+html[data-av-theme='magic'] .theme-rune,
+html[data-av-theme='glam'] .theme-rune,
+html[data-av-theme='football'] .theme-grid,
+html[data-av-theme='hero'] .theme-grid { display: block; }
+
+.theme-orb { width: min(45vw, 34rem); aspect-ratio: 1; border-radius: 50%; filter: blur(42px); opacity: 0.35; animation: theme-drift 12s ease-in-out infinite alternate; }
+.theme-orb-one { left: -12vw; top: 18vh; }
+.theme-orb-two { right: -15vw; top: 58vh; animation-delay: -5s; }
+.theme-rune { color: rgba(215, 192, 255, 0.35); font-size: clamp(3rem, 10vw, 8rem); animation: theme-float 7s ease-in-out infinite alternate; }
+.theme-rune-one { left: 8vw; top: 19vh; }
+.theme-rune-two { right: 10vw; bottom: 16vh; animation-delay: -3s; }
+.theme-grid { inset: 0; opacity: 0.1; }
+
+html[data-av-theme='football'] .theme-orb { background: radial-gradient(circle, #e4cd59, transparent 68%); }
+html[data-av-theme='football'] .theme-grid { background: linear-gradient(90deg, rgba(30, 123, 67, 0.55) 1px, transparent 1px) 0 0/72px 72px, linear-gradient(rgba(30, 123, 67, 0.55) 1px, transparent 1px) 0 0/72px 72px; }
+html[data-av-theme='magic'] .theme-orb { background: radial-gradient(circle, #9567ff, transparent 68%); }
+html[data-av-theme='hero'] .theme-orb { background: radial-gradient(circle, #44b9ff, transparent 68%); }
+html[data-av-theme='hero'] .theme-grid { background: linear-gradient(120deg, transparent 46%, rgba(104, 218, 255, 0.72) 48%, transparent 50%) 0 0/92px 92px; }
+html[data-av-theme='glam'] .theme-orb { background: radial-gradient(circle, #f787c4, transparent 68%); }
+
+@keyframes theme-drift { to { transform: translate3d(5vw, -4vh, 0) scale(1.14); } }
+@keyframes theme-float { to { transform: translate3d(1rem, -1.5rem, 0) rotate(18deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-orb, .theme-rune { animation: none; }
+}
+
 @media (min-width: 640px) {
   .post-card-media {
     border-radius: 1.35rem;
