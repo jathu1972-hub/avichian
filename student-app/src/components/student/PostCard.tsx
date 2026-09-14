@@ -154,9 +154,9 @@ export function PostCard({ post, onLike, liking, onRemoved, onUpdated, toast }: 
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.98 }}
         transition={{ type: 'spring', stiffness: 280, damping: 28 }}
-        className="premium-card min-w-0 overflow-hidden"
+        className="post-card-premium premium-card min-w-0 overflow-hidden"
       >
-        <div className="flex min-w-0 items-center gap-2.5 p-3.5 sm:gap-3 sm:p-4">
+        <div className="flex min-w-0 items-center gap-2.5 p-4 sm:gap-3 sm:p-4.5">
           <Link to={`/home/user/${post.author.id}`} className="shrink-0">
             <StudentAvatar name={post.author.name} photoUrl={post.author.profilePhotoUrl} />
           </Link>
@@ -187,13 +187,13 @@ export function PostCard({ post, onLike, liking, onRemoved, onUpdated, toast }: 
                 src={src}
                 mimeType={post.mediaMimeType}
                 variant="feed"
-                className="max-h-[min(70vh,28rem)] w-full object-cover"
+                className="post-card-media max-h-[min(70vh,32rem)] w-full object-cover"
               />
             );
           })()
         ) : null}
 
-        <div className="min-w-0 space-y-3 p-3.5 sm:p-4">
+        <div className="min-w-0 space-y-3 p-4 sm:p-4.5">
           {editCaption ? (
             <div className="space-y-2">
               <textarea

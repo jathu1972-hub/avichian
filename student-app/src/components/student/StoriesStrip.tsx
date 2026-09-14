@@ -101,11 +101,11 @@ export function StoriesStrip({ groups, onOpenStory, loading }: StoriesStripProps
   const mine = groups.find((g) => g.user.isMe);
 
   return (
-    <div className="premium-card p-4">
+    <section className="stories-rail" aria-label="Stories">
       {/* Heading + action on one baseline */}
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-sm font-extrabold leading-none tracking-tight text-slate-900 dark:text-white">
-          Stories
+      <div className="mb-3 flex items-center justify-between gap-3 px-1">
+        <p className="text-base font-extrabold leading-none tracking-tight text-slate-900 dark:text-white">
+          Campus stories
         </p>
         <Link
           to="/home/create/story"
@@ -115,7 +115,7 @@ export function StoriesStrip({ groups, onOpenStory, loading }: StoriesStripProps
         </Link>
       </div>
 
-      <div className="scroll-x flex items-start gap-3.5 pb-1 sm:gap-4">
+      <div className="scroll-x flex items-start gap-3.5 px-1 pb-1 sm:gap-4">
         {mine ? (
           <StoryCell label="You">
             {/* Relative box = bubble size; + anchors to bottom-right of circle */}
@@ -176,6 +176,6 @@ export function StoriesStrip({ groups, onOpenStory, loading }: StoriesStripProps
           No stories yet — share the first one
         </p>
       ) : null}
-    </div>
+    </section>
   );
 }

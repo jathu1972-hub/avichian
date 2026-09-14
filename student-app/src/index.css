@@ -455,6 +455,68 @@ html[data-av-theme='magic'] .glass-nav, html[data-av-theme='hero'] .glass-nav { 
 html[data-av-theme='glam'] { --color-primary: #e5489a; --color-primary-soft: #f46eb5; --color-secondary: #48142f; --color-accent: #f1b5d4; --av-bg: #fff6fa; --av-surface: rgba(255, 255, 255, 0.83); --av-border: rgba(229, 72, 154, 0.13); }
 html[data-av-theme='glam'] body { background: radial-gradient(700px 400px at 5% 0%, rgba(244, 110, 181, 0.22), transparent 58%), radial-gradient(580px 360px at 100% 15%, rgba(241, 181, 212, 0.42), transparent 58%), var(--av-bg); }
 
+/* Reference-inspired social surfaces: spacious, media-led and intentionally light. */
+.feed-welcome {
+  position: relative;
+}
+
+.feed-create-link {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.55rem 1rem;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-accent));
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.feed-create-link:hover { transform: translateY(-1px); box-shadow: 0 13px 28px color-mix(in srgb, var(--color-primary) 38%, transparent); }
+
+.feed-tabs .chip-pill:first-child {
+  background: var(--color-primary);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 7px 16px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+.stories-rail {
+  position: relative;
+  padding-block: 0.125rem;
+}
+
+.stories-rail .scroll-x {
+  scrollbar-width: none;
+}
+
+.post-card-premium {
+  border-radius: clamp(1.45rem, 4vw, 1.85rem);
+  box-shadow: 0 14px 38px rgba(36, 38, 59, 0.09);
+}
+
+.post-card-premium:hover { transform: translateY(-2px); }
+
+.post-card-media {
+  aspect-ratio: 4 / 3;
+  border-radius: 1.15rem;
+  margin-inline: 0.75rem;
+  width: calc(100% - 1.5rem);
+  object-fit: cover;
+  background: #ececf3;
+}
+
+@media (min-width: 640px) {
+  .post-card-media {
+    border-radius: 1.35rem;
+    margin-inline: 1rem;
+    width: calc(100% - 2rem);
+  }
+}
+
 /* ── AVICHIAN dark-only theme tokens ── */
 :root {
   --dark-bg: #09090b;

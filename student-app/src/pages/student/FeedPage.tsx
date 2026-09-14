@@ -180,12 +180,20 @@ export function FeedPage() {
   }
 
   const feedColumn = (
-    <div className="mx-auto w-full max-w-xl min-w-0 space-y-4 sm:space-y-5">
-      <div className="px-0.5">
-        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary/80">Campus feed</p>
-        <h1 className="font-display text-fluid-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-          For you
-        </h1>
+    <div className="mx-auto w-full max-w-xl min-w-0 space-y-5 sm:space-y-6">
+      <div className="feed-welcome px-1 pt-1">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary/80">AVICHIAN campus</p>
+            <h1 className="mt-1 font-display text-fluid-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+              Discover your people
+            </h1>
+          </div>
+          <Link to="/home/create" className="feed-create-link">Create</Link>
+        </div>
+        <p className="mt-1.5 max-w-md text-sm text-slate-500 dark:text-zinc-400">
+          Fresh work, stories and campus moments from your community.
+        </p>
       </div>
 
       <StoriesStrip groups={stories} loading={storiesLoading} onOpenStory={setActiveStory} />
@@ -230,8 +238,9 @@ export function FeedPage() {
         </div>
       ) : null}
 
-      <div className="scroll-x flex gap-2 pb-1">
+      <div className="scroll-x feed-tabs flex gap-2 pb-1">
         {[
+          { to: '/home', label: 'For you' },
           { to: '/home/reels', label: 'Reels' },
           { to: '/home/events', label: 'Events' },
           { to: '/home/calendar', label: 'Calendar' },
