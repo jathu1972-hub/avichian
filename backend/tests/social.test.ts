@@ -4,10 +4,8 @@ import { createApp } from '../src/app.js';
 import { prisma } from '../src/lib/prisma.js';
 import { importStudentMasterFromPayload } from '../src/services/student-master.service.js';
 import { csrfHeaders, getCsrfToken, TEST_PASSWORD, TEST_STUDENT } from './helpers/test-utils.js';
-import { hashPassword } from '../src/utils/password.js';
-import { generateOtp } from '../src/utils/crypto.js';
 
-const hasDatabase = Boolean(process.env.DATABASE_URL);
+const hasDatabase = Boolean(process.env.TEST_DATABASE_URL && process.env.DATABASE_URL);
 const describeIfDb = hasDatabase ? describe : describe.skip;
 
 const TEST_STUDENT_B = {
@@ -21,46 +19,13 @@ const TEST_STUDENT_B = {
   verified: true,
 } as const;
 
-async function registerStudent(
-  app: ReturnType<typeof createApp>,
-  csrf: string,
-  student: typeof TEST_STUDENT,
-) {
-  await request(app)
-    .post('/api/auth/register/otp')
-    .set(csrfHeaders(csrf))
-    .send({
-      regNo: student.reg_no,
-      name: student.name,
-      mobile: student.mobile,
-      email: student.email,
-      department: student.department,
-    });
-
-  const otp = generateOtp(6);
-  await prisma.otpCode.create({
-    data: {
-      regNo: student.reg_no,
-      mobile: student.mobile,
-      email: student.email,
-      codeHash: await hashPassword(otp),
-      purpose: 'REGISTRATION',
-      channel: 'SMS',
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-    },
-  });
-
-  const completeRes = await request(app)
-    .post('/api/auth/register/complete')
-    .set(csrfHeaders(csrf))
-    .send({
-      regNo: student.reg_no,
-      otp,
-      password: TEST_PASSWORD,
-    });
-
-  expect(completeRes.status).toBe(200);
-  return completeRes.body.data.accessToken as string;
+async function registerStudent(student: typeof TEST_STUDENT) {
+  const { registerWithMaster } = await import('../src/services/auth.service.js');
+  const session = await registerWithMaster(
+    { regNo: student.reg_no, name: student.name, mobile: student.mobile, password: TEST_PASSWORD },
+    { ipAddress: '127.0.0.1' },
+  );
+  return session.accessToken;
 }
 
 describeIfDb('Social API', () => {
@@ -84,7 +49,6 @@ describeIfDb('Social API', () => {
     await prisma.otpCode.deleteMany();
     await prisma.session.deleteMany();
     await prisma.admin.deleteMany();
-    await prisma.hod.deleteMany();
     await prisma.staff.deleteMany();
     await prisma.profile.deleteMany();
     await prisma.user.deleteMany();
@@ -94,8 +58,8 @@ describeIfDb('Social API', () => {
     await importStudentMasterFromPayload([TEST_STUDENT, TEST_STUDENT_B]);
     csrf = await getCsrfToken(app);
 
-    tokenA = await registerStudent(app, csrf, TEST_STUDENT);
-    tokenB = await registerStudent(app, csrf, TEST_STUDENT_B);
+    tokenA = await registerStudent(TEST_STUDENT);
+    tokenB = await registerStudent(TEST_STUDENT_B);
 
     const userB = await prisma.user.findUnique({ where: { regNo: TEST_STUDENT_B.reg_no } });
     userBId = userB!.id;

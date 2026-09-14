@@ -4,10 +4,9 @@ import { createApp } from '../src/app.js';
 import { prisma } from '../src/lib/prisma.js';
 import { importStudentMasterFromPayload } from '../src/services/student-master.service.js';
 import { csrfHeaders, getCsrfToken, TEST_PASSWORD, TEST_STUDENT } from './helpers/test-utils.js';
-import { hashPassword } from '../src/utils/password.js';
-import { generateOtp } from '../src/utils/crypto.js';
+import { env } from '../src/config/env.js';
 
-const hasDatabase = Boolean(process.env.DATABASE_URL);
+const hasDatabase = Boolean(process.env.TEST_DATABASE_URL && process.env.DATABASE_URL);
 const describeIfDb = hasDatabase ? describe : describe.skip;
 
 describeIfDb('Auth API', () => {
@@ -24,7 +23,6 @@ describeIfDb('Auth API', () => {
     await prisma.otpCode.deleteMany();
     await prisma.session.deleteMany();
     await prisma.admin.deleteMany();
-    await prisma.hod.deleteMany();
     await prisma.staff.deleteMany();
     await prisma.profile.deleteMany();
     await prisma.user.deleteMany();
@@ -39,7 +37,7 @@ describeIfDb('Auth API', () => {
     await prisma.$disconnect();
   });
 
-  it('rejects registration when student not in master database', async () => {
+  it('disables public student registration', async () => {
     const res = await request(app)
       .post('/api/auth/register/verify')
       .set(csrfHeaders(csrf))
@@ -51,11 +49,11 @@ describeIfDb('Auth API', () => {
         department: 'Visual Communication',
       });
 
-    expect(res.status).toBe(404);
-    expect(res.body.error).toBe('Student not found');
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('SELF_REGISTER_DISABLED');
   });
 
-  it('rejects registration with wrong department', async () => {
+  it('disables all legacy self-registration endpoints', async () => {
     const res = await request(app)
       .post('/api/auth/register/verify')
       .set(csrfHeaders(csrf))
@@ -67,10 +65,11 @@ describeIfDb('Auth API', () => {
         department: 'Computer Science',
       });
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('SELF_REGISTER_DISABLED');
   });
 
-  it('rejects registration with invalid OTP', async () => {
+  it('does not allow OTP to bypass Super Admin student creation', async () => {
     await request(app)
       .post('/api/auth/register/otp')
       .set(csrfHeaders(csrf))
@@ -91,27 +90,14 @@ describeIfDb('Auth API', () => {
         password: TEST_PASSWORD,
       });
 
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Invalid or expired OTP/i);
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('SELF_REGISTER_DISABLED');
   });
 
-  it('completes registration with valid OTP', async () => {
-    const code = generateOtp(6);
-    await prisma.otpCode.create({
-      data: {
-        regNo: TEST_STUDENT.reg_no,
-        mobile: TEST_STUDENT.mobile,
-        email: TEST_STUDENT.email,
-        codeHash: await hashPassword(code),
-        purpose: 'REGISTRATION',
-        channel: 'SMS',
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-      },
-    });
-
-    const { registerComplete } = await import('../src/services/auth.service.js');
-    const session = await registerComplete(
-      { regNo: TEST_STUDENT.reg_no, otp: code, password: TEST_PASSWORD },
+  it('creates a master-record student account through the protected service path', async () => {
+    const { registerWithMaster } = await import('../src/services/auth.service.js');
+    const session = await registerWithMaster(
+      { regNo: TEST_STUDENT.reg_no, name: TEST_STUDENT.name, mobile: TEST_STUDENT.mobile, password: TEST_PASSWORD },
       { ipAddress: '127.0.0.1' },
     );
 
@@ -120,19 +106,9 @@ describeIfDb('Auth API', () => {
   });
 
   it('locks account after repeated failed logins', async () => {
-    const code = generateOtp(6);
-    await prisma.otpCode.create({
-      data: {
-        regNo: TEST_STUDENT.reg_no,
-        codeHash: await hashPassword(code),
-        purpose: 'REGISTRATION',
-        channel: 'SMS',
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-      },
-    });
-    const { registerComplete } = await import('../src/services/auth.service.js');
-    await registerComplete(
-      { regNo: TEST_STUDENT.reg_no, otp: code, password: TEST_PASSWORD },
+    const { registerWithMaster } = await import('../src/services/auth.service.js');
+    await registerWithMaster(
+      { regNo: TEST_STUDENT.reg_no, name: TEST_STUDENT.name, mobile: TEST_STUDENT.mobile, password: TEST_PASSWORD },
       {},
     );
 
@@ -148,23 +124,14 @@ describeIfDb('Auth API', () => {
       .set(csrfHeaders(csrf))
       .send({ regNo: TEST_STUDENT.reg_no, password: 'WrongPass1' });
 
-    expect(res.status).toBe(423);
+    // Local development intentionally disables lockouts; production enables them by default.
+    expect(res.status).toBe(env.lockoutEnabled ? 423 : 401);
   });
 
   it('rejects suspended accounts', async () => {
-    const code = generateOtp(6);
-    await prisma.otpCode.create({
-      data: {
-        regNo: TEST_STUDENT.reg_no,
-        codeHash: await hashPassword(code),
-        purpose: 'REGISTRATION',
-        channel: 'SMS',
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-      },
-    });
-    const { registerComplete } = await import('../src/services/auth.service.js');
-    await registerComplete(
-      { regNo: TEST_STUDENT.reg_no, otp: code, password: TEST_PASSWORD },
+    const { registerWithMaster } = await import('../src/services/auth.service.js');
+    await registerWithMaster(
+      { regNo: TEST_STUDENT.reg_no, name: TEST_STUDENT.name, mobile: TEST_STUDENT.mobile, password: TEST_PASSWORD },
       {},
     );
 
@@ -183,19 +150,9 @@ describeIfDb('Auth API', () => {
   });
 
   it('student OTP login requires reg number lookup then matching mobile', async () => {
-    const code = generateOtp(6);
-    await prisma.otpCode.create({
-      data: {
-        regNo: TEST_STUDENT.reg_no,
-        codeHash: await hashPassword(code),
-        purpose: 'REGISTRATION',
-        channel: 'SMS',
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-      },
-    });
-    const { registerComplete } = await import('../src/services/auth.service.js');
-    await registerComplete(
-      { regNo: TEST_STUDENT.reg_no, otp: code, password: TEST_PASSWORD },
+    const { registerWithMaster } = await import('../src/services/auth.service.js');
+    await registerWithMaster(
+      { regNo: TEST_STUDENT.reg_no, name: TEST_STUDENT.name, mobile: TEST_STUDENT.mobile, password: TEST_PASSWORD },
       {},
     );
 

@@ -31,4 +31,5 @@ export const TEST_STUDENT = {
   verified: true,
 } as const;
 
-export const TEST_PASSWORD = 'SecurePass1';
+/** Meets the current student password policy, including special character. */
+export const TEST_PASSWORD = 'SecurePass1!';
