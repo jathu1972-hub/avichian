@@ -260,7 +260,7 @@ export function ReelsPage() {
   }
 
   return (
-    <div className="relative mx-auto w-full max-w-lg">
+    <div className="reels-stage relative mx-auto w-full max-w-lg">
       <div className="mb-2 flex items-center justify-between px-1">
         <h1 className="font-display text-lg font-bold text-slate-900 dark:text-zinc-50">Reels</h1>
         <Link
@@ -279,7 +279,7 @@ export function ReelsPage() {
 
       <div
         ref={scrollerRef}
-        className="scroll-region h-[min(calc(100dvh-9.5rem),780px)] max-h-[calc(100dvh-9.5rem)] w-full snap-y snap-mandatory overflow-x-hidden overflow-y-auto overscroll-y-contain rounded-[24px] bg-black shadow-float"
+        className="reels-scroller scroll-region h-[min(calc(100dvh-9.5rem),780px)] max-h-[calc(100dvh-9.5rem)] w-full snap-y snap-mandatory overflow-x-hidden overflow-y-auto overscroll-y-contain rounded-[24px] bg-black shadow-float"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {reels.map((reel, idx) => {

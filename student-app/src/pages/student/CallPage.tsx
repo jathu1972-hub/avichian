@@ -1019,7 +1019,7 @@ export function CallPage({ mode }: { mode: 'voice' | 'video' }) {
   const ss = String(seconds % 60).padStart(2, '0');
 
   return (
-    <div className="relative flex min-h-[80dvh] flex-col overflow-hidden rounded-[28px] bg-slate-950 text-white shadow-float">
+    <div className="call-stage relative flex min-h-[80dvh] flex-col overflow-hidden rounded-[28px] bg-slate-950 text-white shadow-float">
       {/* Background for voice / video shell */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-900 via-slate-950 to-black" />
 

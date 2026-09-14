@@ -391,7 +391,9 @@ export function StudentLayout() {
         </header>
 
         <main className="main-with-bottom-nav mx-auto w-full max-w-6xl px-safe py-3 sm:py-4 lg:py-6">
-          <Outlet />
+          <div key={location.pathname} className="page-stage">
+            <Outlet />
+          </div>
         </main>
 
         {/* Floating glass bottom navigation */}

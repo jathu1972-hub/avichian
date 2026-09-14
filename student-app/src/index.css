@@ -927,6 +927,107 @@ html.dark {
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35);
 }
 
+/* Shared page treatment — every existing route renders inside this stage. */
+.page-stage {
+  isolation: isolate;
+  animation: page-arrive 360ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.page-stage > div {
+  position: relative;
+}
+
+.page-stage :is(.premium-card, .glass-card, .glass-elevated) {
+  border-color: color-mix(in srgb, var(--color-primary) 10%, rgba(255,255,255,.65));
+  box-shadow: 0 18px 45px rgba(31, 41, 55, 0.07), 0 2px 8px rgba(31, 41, 55, 0.03);
+}
+
+.page-stage :is(input, select, textarea) {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.page-stage :is(input, select, textarea):focus-visible {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 14%, transparent);
+}
+
+.page-stage button, .page-stage a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The campus data pages share a spacious editorial rhythm at every breakpoint. */
+.page-stage > div > :is(.grid, .space-y-4, .space-y-5, .space-y-6) {
+  position: relative;
+}
+
+.page-stage :is(.chat-thread, [class*='rounded-[28px]']) {
+  background-clip: padding-box;
+}
+
+.chat-directory .premium-card {
+  overflow: hidden;
+}
+
+.chat-directory .premium-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--color-primary), var(--color-secondary));
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.chat-directory .premium-card:hover::before,
+.chat-directory .premium-card:focus-within::before { opacity: 1; }
+
+.chat-thread {
+  box-shadow: 0 24px 60px rgba(30, 41, 59, 0.14), 0 1px 0 rgba(255,255,255,.7) inset;
+}
+
+.reels-stage::before {
+  content: '';
+  position: absolute;
+  inset: 2.75rem -1.25rem -1.25rem;
+  z-index: -1;
+  border-radius: 2.5rem;
+  background: radial-gradient(circle at 25% 15%, color-mix(in srgb, var(--color-primary) 20%, transparent), transparent 42%), radial-gradient(circle at 85% 80%, color-mix(in srgb, var(--color-secondary) 18%, transparent), transparent 44%);
+  filter: blur(10px);
+}
+
+.reels-scroller { border: 1px solid rgba(255,255,255,.18); }
+
+.call-stage {
+  box-shadow: 0 28px 80px rgba(2, 6, 23, 0.35), 0 1px 0 rgba(255,255,255,.13) inset;
+}
+
+.call-stage::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: inherit;
+}
+
+html[data-av-theme='football'] .page-stage :is(.premium-card, .glass-card, .glass-elevated) {
+  box-shadow: 0 18px 42px rgba(3, 54, 30, 0.14);
+}
+
+html[data-av-theme='magic'] .page-stage :is(.premium-card, .glass-card, .glass-elevated),
+html[data-av-theme='hero'] .page-stage :is(.premium-card, .glass-card, .glass-elevated) {
+  box-shadow: 0 18px 48px rgba(2, 6, 23, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+html[data-av-theme='glam'] .page-stage :is(.premium-card, .glass-card, .glass-elevated) {
+  box-shadow: 0 18px 45px rgba(219, 39, 119, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+@keyframes page-arrive {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes skill-thunder-travel {
   to {
     stroke-dashoffset: 0;
@@ -934,6 +1035,7 @@ html.dark {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .page-stage { animation: none; }
   .skill-thunder-line,
   .skill-connect-btn,
   .skill-match-card-glow,

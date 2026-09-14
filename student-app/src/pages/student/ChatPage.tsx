@@ -132,7 +132,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl min-w-0 space-y-4">
+    <div className="chat-directory mx-auto w-full max-w-2xl min-w-0 space-y-4">
       <div className="px-0.5">
         <h1 className="font-display text-fluid-2xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-50">
           Chat
