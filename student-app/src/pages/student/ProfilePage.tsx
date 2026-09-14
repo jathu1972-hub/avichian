@@ -319,9 +319,9 @@ export function ProfilePage() {
       </div>
 
       {/* Hero card — premium social header */}
-      <div className="relative overflow-hidden rounded-[28px] bg-white/90 shadow-float ring-1 ring-slate-100/80 dark:bg-slate-900/70 dark:ring-slate-800">
+      <div className="profile-hero relative overflow-hidden rounded-[30px] bg-white/90 shadow-float ring-1 ring-slate-100/80 dark:bg-slate-900/70 dark:ring-slate-800">
         {/* Cover */}
-        <div className="group relative h-40 bg-gradient-to-br from-primary via-indigo-500 to-violet-600 sm:h-48 md:h-56">
+        <div className="profile-cover group relative h-44 bg-gradient-to-br from-primary via-indigo-500 to-violet-600 sm:h-52 md:h-60">
           {coverUrl ? (
             <button
               type="button"
@@ -356,7 +356,7 @@ export function ProfilePage() {
                       ? setLightbox({ src: photoUrl, label: 'Profile photo' })
                       : undefined
                   }
-                  className="block rounded-full bg-white p-1 shadow-float ring-2 ring-white dark:bg-slate-900 dark:ring-slate-900"
+                  className="profile-avatar-frame block rounded-full bg-white p-1 shadow-float ring-2 ring-white dark:bg-slate-900 dark:ring-slate-900"
                 >
                   <StudentAvatar name={user.name} photoUrl={user.profilePhotoUrl} size="lg" ring />
                 </button>

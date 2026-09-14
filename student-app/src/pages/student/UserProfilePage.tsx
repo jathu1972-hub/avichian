@@ -151,10 +151,16 @@ export function UserProfilePage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="glass-card rounded-[28px] p-6 shadow-soft">
+    <div className="mx-auto max-w-3xl space-y-5">
+      <div className="profile-hero glass-card overflow-hidden rounded-[30px] shadow-soft">
+        <div className="profile-cover relative h-28 bg-gradient-to-br from-primary via-indigo-500 to-violet-600 sm:h-36">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.3),transparent_48%)]" />
+        </div>
+        <div className="p-5 pt-0 sm:p-6 sm:pt-0">
         <div className="flex items-start gap-4">
-          <StudentAvatar name={profile.name} photoUrl={profile.profilePhotoUrl} size="lg" ring />
+          <div className="profile-avatar-frame -mt-12 shrink-0 rounded-full bg-white p-1 shadow-float dark:bg-slate-900">
+            <StudentAvatar name={profile.name} photoUrl={profile.profilePhotoUrl} size="lg" ring />
+          </div>
           <div className="min-w-0 flex-1">
             <h1 className="text-xl font-bold text-slate-900">{profile.name}</h1>
             <p className="text-sm text-slate-500">
@@ -250,6 +256,7 @@ export function UserProfilePage() {
             Open Skill Match profile
           </Link>
         ) : null}
+        </div>
       </div>
 
       <div className="space-y-3">
