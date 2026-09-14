@@ -544,7 +544,14 @@ html[data-av-theme='glam'] body { background: radial-gradient(700px 400px at 5% 
   contain: strict;
 }
 
-.app-shell > :not(.theme-decoration) { position: relative; z-index: 1; }
+/*
+ * Keep content above the decorative atmosphere without changing its layout
+ * mode. Applying `position: relative` here overrides Tailwind's `fixed` on
+ * the desktop rail and call banner, which puts them back in document flow and
+ * leaves a large empty band above every page.
+ */
+.app-shell > :not(.theme-decoration) { z-index: 1; }
+.app-shell-main-col { position: relative; }
 
 .theme-decoration > * { display: none; }
 .theme-orb, .theme-rune, .theme-grid { position: absolute; pointer-events: none; }
