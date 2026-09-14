@@ -14,7 +14,9 @@ services:
     region: singapore
     rootDir: .
     buildCommand: npm ci && npm run build -w @avichian/shared && npx prisma generate --schema=backend/prisma/schema.prisma && npm run build -w backend
-    startCommand: cd backend && (npx prisma migrate deploy || npx prisma db push) && npm start
+    # A production deploy must only apply reviewed migrations.  Falling back to
+    # `db push` can silently create an unreviewed schema change.
+    startCommand: cd backend && npx prisma migrate deploy && npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV

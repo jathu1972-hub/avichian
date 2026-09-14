@@ -1,0 +1,79 @@
+# Render Blueprint — isolated AVICHIAN staging backend
+#
+# Import this file from the `staging` Git branch into the Render project’s
+# Staging environment. It deliberately creates a different service and
+# database from production. It contains no credentials and intentionally
+# requires the staging front-end URLs, R2 credentials and TURN credentials to
+# be entered as environment secrets in Render.
+
+services:
+  - type: web
+    name: avichian-api-staging
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: .
+    buildCommand: npm ci && npm run build -w @avichian/shared && npx prisma generate --schema=backend/prisma/schema.prisma && npm run build -w backend
+    startCommand: cd backend && npx prisma migrate deploy && npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: staging
+      - key: PORT
+        value: 4000
+      - key: CROSS_SITE_COOKIES
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: avichian-staging-db
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      # Set only staging Netlify origins after their URLs are known.
+      - key: FRONTEND_URLS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: ADMIN_URL
+        sync: false
+      # Set to this service's HTTPS URL after Render assigns it.
+      - key: PUBLIC_API_URL
+        sync: false
+      # R2 is required for durable staging upload certification.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
+      # TURN must remain server-side; never expose its credential via Vite.
+      - key: TURN_URLS
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
+      - key: ACCESS_TOKEN_EXPIRY
+        value: 15m
+      - key: REFRESH_TOKEN_EXPIRY_DAYS
+        value: "30"
+      - key: COLLEGE_EMAIL_DOMAIN
+        value: avichi.edu
+      - key: SMS_PROVIDER
+        value: console
+
+databases:
+  - name: avichian-staging-db
+    plan: free
+    databaseName: avichian_staging
+    user: avichian_staging
