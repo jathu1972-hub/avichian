@@ -1,8 +1,8 @@
 # Student App — Netlify site
-# Netlify UI: Base directory = student-app
-# Publish is relative to base → student-app/dist
+# Build from the monorepo package; publish is relative to this base.
 
 [build]
+  base = "student-app"
   command = "cd .. && npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/student-app"
   publish = "dist"
 
