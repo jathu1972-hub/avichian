@@ -1,9 +1,9 @@
 # Super Admin — Netlify site
-# Netlify UI: Base directory = superadmin-portal
+# Netlify project uses the repository root for this monorepo build.
 
 [build]
-  command = "cd .. && npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/super-admin-portal"
-  publish = "dist"
+  command = "npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/super-admin-portal"
+  publish = "superadmin-portal/dist"
 
 [build.environment]
   NODE_VERSION = "20"
