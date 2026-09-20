@@ -13,7 +13,6 @@ import {
   api,
   clearCsrfToken,
   getAccessToken,
-  prefetchCsrfToken,
   refreshAccessToken,
   setAccessToken,
   setCsrfToken,
@@ -34,6 +33,7 @@ interface AuthState {
 }
 
 const AuthContext = createContext<AuthState | null>(null);
+const BOOTSTRAP_WAIT_MS = 900;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<PublicUser | null>(null);
@@ -46,9 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       csrfToken?: string | null,
     ): Promise<PublicUser | null> => {
       setAccessToken(accessToken);
-      if (csrfToken) {
-        setCsrfToken(csrfToken);
-      }
+      if (csrfToken) setCsrfToken(csrfToken);
 
       if (profile) {
         if (profile.role !== 'STUDENT' && profile.role !== 'STAFF') {
@@ -80,12 +78,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const bootstrapSession = useCallback(async () => {
-    try {
-      await prefetchCsrfToken();
-      let token = getAccessToken();
-      if (!token) {
-        token = await refreshAccessToken();
+    // A slow or offline API must never keep the login form behind the splash.
+    // A remembered session may still resolve in the background and redirect normally.
+    let released = false;
+    const release = () => {
+      if (!released) {
+        released = true;
+        setLoading(false);
       }
+    };
+    const releaseTimer = window.setTimeout(release, BOOTSTRAP_WAIT_MS);
+
+    try {
+      let token = getAccessToken();
+      if (!token) token = await refreshAccessToken();
       if (!token) {
         setUser(null);
         return;
@@ -103,12 +109,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAccessToken(null);
       setUser(null);
     } finally {
-      setLoading(false);
+      window.clearTimeout(releaseTimer);
+      release();
     }
   }, []);
 
   useEffect(() => {
-    bootstrapSession();
+    void bootstrapSession();
   }, [bootstrapSession]);
 
   useEffect(() => {
@@ -117,21 +124,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     import('../lib/socket').then(({ connectSocket }) => {
       if (!cancelled) connectSocket();
     });
-    // Keep JWT fresh while app is open (also scheduled from setAccessToken)
     const refreshTick = window.setInterval(() => {
       void refreshAccessToken();
     }, 10 * 60 * 1000);
     return () => {
       cancelled = true;
       window.clearInterval(refreshTick);
-      // Do not hard-disconnect socket on every user identity re-render path —
-      // only when leaving authenticated state (handled below).
     };
   }, [user]);
 
   useEffect(() => {
     if (user) return;
-    // Logged out → drop socket
     import('../lib/socket').then(({ disconnectSocket }) => disconnectSocket());
   }, [user]);
 
