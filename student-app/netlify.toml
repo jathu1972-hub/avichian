@@ -1,10 +1,9 @@
 # Student App — Netlify site
-# Build from the monorepo package; publish is relative to this base.
+# Build from the repository root so npm workspaces resolve consistently.
 
 [build]
-  base = "student-app"
-  command = "cd .. && npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/student-app"
-  publish = "dist"
+  command = "npm ci && npm run build -w @avichian/shared && npm run build -w @avichian/student-app"
+  publish = "student-app/dist"
 
 [build.environment]
   NODE_VERSION = "20"
